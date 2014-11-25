@@ -26,6 +26,7 @@ public class PacketEncoder extends MessageToByteEncoder<Packet> {
             Output output = new Output(64, 2<<20);
             kryo.writeClassAndObject(output, msg.data);
             out.writeInt(msg.packetNum);
+            out.writeShort(msg.service);
             out.writeBytes(output.getBuffer(), 0 , output.position());
         } catch (Exception e) {
             LOGGER.error("error while serializing packet {}", msg, e);

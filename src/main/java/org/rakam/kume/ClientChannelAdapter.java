@@ -27,7 +27,7 @@ public class ClientChannelAdapter extends ChannelInboundHandlerAdapter {
         Packet read = (Packet) msg;
         CompletableFuture<Result> ifPresent = messageHandlers.remove(read.packetNum);
         if (ifPresent != null)
-            ifPresent.complete(new Result(true, read.getData()));
+            ifPresent.complete(new Result(read.getData()));
         else
             LOGGER.warn("unhandled packet {}", msg);
     }

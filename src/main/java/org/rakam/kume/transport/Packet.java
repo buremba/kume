@@ -6,14 +6,19 @@ package org.rakam.kume.transport;
 public class Packet {
     public final int packetNum;
     public Object data;
+    public short service;
 
-    public Packet(int packetNum, Object data) {
+    public Packet(int packetNum, Object data, short service) {
         this.packetNum = packetNum;
         this.data = data;
+        this.service = service;
     }
 
     public Object getData() {
         return data;
+    }
+    public Object getService() {
+        return service;
     }
 
     @Override

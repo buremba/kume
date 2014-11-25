@@ -41,16 +41,8 @@ public class MulticastChannelAdapter extends ChannelInboundHandlerAdapter {
                 Member sender = req.sender;
                 if (sender == null || sender.equals(cluster.getLocalMember()))
                     return;
-                req.cluster = cluster;
 
-                req.run();
-            } else if (o instanceof Cluster.InternalOperation) {
-                Cluster.InternalOperation op = (Cluster.InternalOperation) o;
-                Member sender = op.sender;
-                if (sender == null || sender.equals(cluster.getLocalMember()))
-                    return;
-                op.cluster = cluster;
-                op.run();
+                req.run(cluster, new OperationContext(cluster, ctx));
             }
         } catch (Exception e) {
             LOGGER.error("multicast server couldn't handle package. ", e);

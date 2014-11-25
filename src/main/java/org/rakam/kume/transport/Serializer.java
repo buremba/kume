@@ -35,12 +35,7 @@ public class Serializer {
     public <T> T toObject(ByteBuf obj, int size) {
         byte[] bytes = new byte[size];
         obj.readBytes(bytes);
-        try {
-            return (T) kryo.readClassAndObject(new Input(bytes));
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-        return null;
+        return (T) kryo.readClassAndObject(new Input(bytes));
     }
 
     public <T> T toObject(ByteBuf obj, Class<T> clazz) {

@@ -25,36 +25,17 @@ public class ServerChannelAdapter extends ChannelInboundHandlerAdapter {
 
     @Override
     public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
+        System.out.println(Thread.currentThread().getId());
         Packet read = (Packet) msg;
         Object o = read.getData();
-        if (o instanceof Operation) {
-            Operation o1 = (Operation) o;
-            int service = o1.getService();
-            if (service == -1)
-                eventBus.handleOperation(o1);
-            Service service1 = services.get(service);
-            try {
-                service1.handleOperation(o1);
-            } catch (Throwable e) {
-                e.printStackTrace();
-            }
-        } else if (o instanceof Request) {
-            Request o1 = (Request) o;
-            int service = o1.getService();
-            if (service == -1)
-                eventBus.handleRequest(o1);
-            Service service1 = services.get(service);
-            Object o2;
-            try {
-                o2 = service1.handleRequest(o1);
-            } catch (Throwable e) {
-                o2 = null;
-                e.printStackTrace();
-            }
+        OperationContext ctx1 = new OperationContext(eventBus, ctx, read.packetNum);
+        Service service = services.get(read.service);
 
-            ctx.write(new Packet(read.packetNum, o2));
+        if (o instanceof Request) {
+            Request o1 = (Request) o;
+            o1.run(service, ctx1);
         } else {
-            LOGGER.error("Unknown message type received {}", o.getClass().getCanonicalName());
+            service.handle(ctx1, read.data);
         }
     }
 }

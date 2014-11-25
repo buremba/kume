@@ -1,18 +1,15 @@
 package org.rakam.kume;
 
-import org.rakam.kume.service.Service;
-import org.rakam.kume.service.ServiceConstructor;
-
 import java.net.InetSocketAddress;
+import java.util.ArrayList;
 import java.util.Collection;
-import java.util.List;
 
 /**
  * Created by buremba <Burak Emre Kabakcı> on 23/11/14 19:53.
  */
 public class ClusterBuilder {
     private Collection<Member> members;
-    private List<ServiceConstructor<Service>> services;
+    private ServiceInitializer services;
     private InetSocketAddress serverAddress;
 
     public ClusterBuilder setMembers(Collection<Member> members) {
@@ -24,12 +21,12 @@ public class ClusterBuilder {
         return members;
     }
 
-    public ClusterBuilder setServices(List<ServiceConstructor<Service>> services) {
+    public ClusterBuilder setServices(ServiceInitializer services) {
         this.services = services;
         return this;
     }
 
-    public List<ServiceConstructor<Service>> getServices() {
+    public ServiceInitializer getServices() {
         return services;
     }
 
@@ -43,11 +40,16 @@ public class ClusterBuilder {
     }
 
     public Cluster start() throws InterruptedException {
-        Cluster cluster = new Cluster(members, services);
-        if(serverAddress==null)
-            cluster.start();
+        if (members == null)
+            members = new ArrayList<>();
+
+        if (services == null)
+            throw new IllegalArgumentException("services are not set");
+
+        if (serverAddress != null)
+            return new Cluster(members, services, serverAddress);
         else
-            cluster.start(serverAddress);
-        return cluster;
+            return new Cluster(members, services);
+
     }
 }

@@ -2,37 +2,61 @@ package org.rakam.kume;
 
 import org.junit.Test;
 import org.rakam.kume.service.Service;
-import org.rakam.kume.service.ServiceConstructor;
-import org.rakam.kume.util.NetworkUtil;
 
-import java.net.InetSocketAddress;
-import java.util.ArrayList;
+import java.util.concurrent.CountDownLatch;
 
 /**
  * Created by buremba <Burak Emre Kabakcı> on 23/11/14 19:34.
  */
-public class ClusterTest {
+public class ClusterTest extends KumeTest {
 
     @Test
-    public void voteTest() throws InterruptedException {
-        ArrayList<Member> members = new ArrayList();
-        ArrayList<ServiceConstructor<Service>> services = new ArrayList<>();
-        InetSocketAddress serverAddress = new InetSocketAddress(NetworkUtil.getDefaultAddress(), 0);
+    public void testSendAllMembers() throws InterruptedException {
+        CountDownLatch latch = new CountDownLatch(2);
 
-        Cluster cluster0 = new ClusterBuilder()
-        .setMembers(members)
-        .setServices(services)
-        .setServerAddress(serverAddress)
-        .start();
+        ServiceInitializer constructors = new ServiceInitializer()
+              .add((bus) -> new MyService(bus, latch));
 
-        Cluster cluster1 = new ClusterBuilder()
-        .setMembers(members)
-        .setServices(services)
-        .setServerAddress(serverAddress)
-        .start();
+        Cluster cluster0 = new ClusterBuilder().setServices(constructors).start();
+        Cluster cluster1 = new ClusterBuilder().setServices(constructors).start();
+        Cluster cluster2 = new ClusterBuilder().setServices(constructors).start();
 
-        cluster0.voteElection().thenAcceptAsync((result) -> {
-            System.out.println("is master" + result);
-        });
+        waitForDiscovery(cluster0, 2);
+
+        MyService service = cluster0.getService(MyService.class);
+        service.pingAll();
+
+        latch.await();
+    }
+
+    private static class MyService implements Service {
+
+        private final Cluster.ServiceContext bus;
+        private final CountDownLatch latch;
+
+        public MyService(Cluster.ServiceContext bus, CountDownLatch latch) {
+            this.bus = bus;
+            this.latch = latch;
+        }
+
+        public void pingAll() {
+            bus.sendAllMembers(1);
+        }
+
+        @Override
+        public void handle(OperationContext ctx, Object request) {
+            if(request.equals(1))
+                latch.countDown();
+        }
+
+        @Override
+        public void onStart() {
+
+        }
+
+        @Override
+        public void onClose() {
+
+        }
     }
 }

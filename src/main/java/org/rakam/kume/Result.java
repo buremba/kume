@@ -9,9 +9,9 @@ public class Result<T> {
 
     protected static Result FAILED = new Result(false);
 
-    public Result(boolean success, Object data) {
+    public Result(Object data) {
         this.data = data;
-        this.success = success;
+        this.success = true;
     }
 
     public T getData() {

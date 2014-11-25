@@ -3,7 +3,7 @@ package org.rakam.kume.service.ringmap;
 import org.rakam.kume.Cluster;
 import org.rakam.kume.Member;
 import org.rakam.kume.MembershipListener;
-import org.rakam.kume.Operation;
+import org.rakam.kume.OperationContext;
 import org.rakam.kume.Request;
 import org.rakam.kume.Result;
 import org.rakam.kume.service.Service;
@@ -27,21 +27,21 @@ public class RingMap implements MembershipListener, Service {
 
     ConcurrentHashMap<String, Integer> map = new ConcurrentHashMap<>();
     ConsistentHashRing ring;
-    Cluster cluster;
+    Cluster.ServiceContext<RingMap> cluster;
 
     private final Member localMember;
     private boolean paused;
 
-    public RingMap(Cluster cluster) {
+    public RingMap(Cluster.ServiceContext cluster) {
         this.cluster = cluster;
 
-        cluster.addMembershipListener(this);
-        localMember = cluster.getLocalMember();
+        cluster.getCluster().addMembershipListener(this);
+        localMember = cluster.getCluster().getLocalMember();
     }
 
     @Override
     public void memberAdded(Member member) {
-        cluster.pause();
+        cluster.getCluster().pause();
 
         try {
             ring = ring.addNode(member);
@@ -78,14 +78,14 @@ public class RingMap implements MembershipListener, Service {
                         LOGGER.info("Successfully completed migration. {} elements moved to new member {}", finalMigrationSize, member));
             }
         } finally {
-            cluster.resume();
+            cluster.getCluster().resume();
         }
 
     }
 
     @Override
     public void memberRemoved(Member member) {
-        cluster.pause();
+        cluster.getCluster().pause();
 
         try {
             ConsistentHashRing oldRing = ring;
@@ -112,40 +112,18 @@ public class RingMap implements MembershipListener, Service {
                 }
             }
         } finally {
-            cluster.resume();
+            cluster.getCluster().resume();
         }
     }
 
     @Override
-    public void handleOperation(Operation operation) {
-        try {
-            if(operation instanceof MapOperation) {
-                MapOperation mapOperation = (MapOperation) operation;
-                mapOperation.setMap(map);
-                mapOperation.run();
-            }else {
-                LOGGER.warn("Discarded unidentified message", operation);
-            }
-        } catch (Exception e) {
-            LOGGER.error("Couldn't execute operation", e);
-            e.printStackTrace();
-        }
-    }
-
-    @Override
-    public Object handleRequest(Request request) {
-        if(request instanceof MapRequest) {
-            MapRequest mapOperation = (MapRequest) request;
-            mapOperation.setMap(map);
-            return mapOperation.run();
-        }else {
-            throw new IllegalArgumentException("The Request must be an instance of MapRequests");
-        }
+    public void handle(OperationContext ctx, Object request) {
+        //
     }
 
     @Override
     public void onStart() {
-        ring = new ConsistentHashRing(cluster.getClusterMembers(), 8);
+        ring = new ConsistentHashRing(cluster.getCluster().getClusterMembers(), 8);
     }
 
     @Override
@@ -154,15 +132,45 @@ public class RingMap implements MembershipListener, Service {
         paused = true;
     }
 
-    public void put(String key, Integer val) {
+    public CompletionStage<Boolean> put(String key, Integer val) {
         Collection<Member> nodes = ring.findNode(key);
+
+        CompletableFuture<Boolean> f = new CompletableFuture<>();
+
+        CompletionStage[] stages = new CompletionStage[nodes.size()];
+        int idx = 0;
+        final int[] resultArr = {0, 0};
         for (Member next : nodes) {
             if (next.equals(localMember)) {
                 map.put(key, val);
             } else {
-                cluster.send(next.getId(), new PutMapOperation(key, val));
+                stages[idx] = cluster.send(next.getId(), new PutMapOperation(key, val)).thenAccept(x -> {
+                    if(x.isSucceeded()) {
+                        resultArr[0]++;
+                    }else {
+                        resultArr[1]++;
+                    }
+                    if(resultArr[0] > stages.length/2) {
+                        f.complete(true);
+                    }else
+                    if(resultArr[1] > stages.length/2) {
+                        f.complete(false);
+                    }
+                });
             }
+            idx++;
         }
+
+        return f;
+    }
+
+    public CompletionStage<Result> get(String key) {
+        Collection<Member> nodes = ring.findNode(key);
+        if(nodes.contains(localMember)) {
+            return CompletableFuture.completedFuture(new Result(map.get(key)));
+        }
+
+        return cluster.send(nodes.iterator().next().getId(), (service, ctx) -> service.map.get(key));
     }
 
     public Map<String, Integer> localMap() {
@@ -171,12 +179,7 @@ public class RingMap implements MembershipListener, Service {
 
 
     public CompletionStage<Map<Member, Integer>> size() {
-        Map<Member, CompletionStage<Result>> resultMap = cluster.sendAllMembers(new MapRequest<Integer>() {
-            @Override
-            public Integer run() {
-                return map.size();
-            }
-        });
+        Map<Member, CompletionStage<Result>> resultMap = cluster.sendAllMembers((service, ctx) -> ctx.reply(map.size()));
 
         Map<Member, Integer> m = new ConcurrentHashMap<>(map.size());
         CompletableFuture<Map<Member, Integer>> future = new CompletableFuture<>();
@@ -201,7 +204,7 @@ public class RingMap implements MembershipListener, Service {
     }
 
 
-    public static class PutMapOperation extends MapOperation {
+    public static class PutMapOperation implements Request<RingMap> {
         String key;
         Integer value;
 
@@ -211,11 +214,11 @@ public class RingMap implements MembershipListener, Service {
         }
 
         @Override
-        public void execute() {
-            map.put(key, value);
+        public void run(RingMap service, OperationContext ctx) {
+            service.map.put(key, value);
         }
     }
-    public static class PutAllMapOperation extends MapOperation {
+    public static class PutAllMapOperation implements Request<RingMap> {
         Map<String, Integer> addAll;
 
         public PutAllMapOperation(Map<String, Integer> map) {
@@ -223,8 +226,9 @@ public class RingMap implements MembershipListener, Service {
         }
 
         @Override
-        public void execute() {
-            map.putAll(this.addAll);
+        public void run(RingMap service, OperationContext ctx) {
+            service.map.putAll(this.addAll);
         }
+
     }
 }

@@ -1,45 +1,68 @@
 package org.rakam.kume.service.master;
 
 import org.rakam.kume.Cluster;
+import org.rakam.kume.Member;
+import org.rakam.kume.OperationContext;
+import org.rakam.kume.Result;
+import org.rakam.kume.service.Service;
 
+import java.util.Collection;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 /**
  * Created by buremba <Burak Emre Kabakcı> on 24/11/14 00:08.
  */
-public class RaftMasterElection {
-    Cluster cluster;
+public class RaftMasterElection implements Service {
+    Cluster.ServiceContext bus;
 
-    public RaftMasterElection(Cluster cluster) {
-        this.cluster = cluster;
+    public RaftMasterElection(Cluster.ServiceContext cluster) {
+        this.bus = cluster;
     }
 
-    public CompletableFuture<Boolean> voteElection() {
+    public void voteElection() {
+        Collection<Member> clusterMembers = bus.getCluster().getClusterMembers();
+
         Map<String, Boolean> map = new ConcurrentHashMap<>();
         CompletableFuture<Boolean> future = new CompletableFuture<>();
-        cluster.getClusterMembers().forEach((node) -> {
-            cluster.send(node.getId(), (ElectionRequest<Boolean>) () -> true).thenAccept(result -> {
+        Map<Member, CompletionStage<Result>> m = bus.sendAllMembers((service, ctx) -> ctx.reply(true));
+        m.forEach((member, resultFuture) -> {
+            resultFuture.thenAccept(result -> {
                 System.out.println(result.getData());
                 if (result.isSucceeded()) {
-                    map.put(node.getId(), (Boolean) result.getData());
+                    map.put("a", (Boolean) result.getData());
                 } else {
                     System.out.println("why");
                 }
 
                 Map<Boolean, Long> stream = map.entrySet().stream()
                         .collect(Collectors.groupingBy(o -> o.getValue(), Collectors.counting()));
-                if (stream.getOrDefault(Boolean.TRUE, 0L) > cluster.getClusterMembers().size() / 2) {
+                if (stream.getOrDefault(Boolean.TRUE, 0L) > clusterMembers.size() / 2) {
                     future.complete(true);
-                } else if (stream.getOrDefault(Boolean.FALSE, 0L) > cluster.getClusterMembers().size() / 2) {
+                } else if (stream.getOrDefault(Boolean.FALSE, 0L) > clusterMembers.size() / 2) {
                     future.complete(false);
                 }
             });
         });
-        return future;
     }
 
 
+
+    @Override
+    public void handle(OperationContext ctx, Object request) {
+
+    }
+
+    @Override
+    public void onStart() {
+
+    }
+
+    @Override
+    public void onClose() {
+
+    }
 }
