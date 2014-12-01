@@ -12,30 +12,30 @@ public class ClusterBuilder {
     private ServiceInitializer services;
     private InetSocketAddress serverAddress;
 
-    public ClusterBuilder setMembers(Collection<Member> members) {
+    public ClusterBuilder members(Collection<Member> members) {
         this.members = members;
         return this;
     }
 
-    public Collection<Member> getMembers() {
+    public Collection<Member> members() {
         return members;
     }
 
-    public ClusterBuilder setServices(ServiceInitializer services) {
+    public ClusterBuilder services(ServiceInitializer services) {
         this.services = services;
         return this;
     }
 
-    public ServiceInitializer getServices() {
+    public ServiceInitializer services() {
         return services;
     }
 
-    public ClusterBuilder setServerAddress(InetSocketAddress serverAddress) {
+    public ClusterBuilder serverAddress(InetSocketAddress serverAddress) {
         this.serverAddress = serverAddress;
         return this;
     }
 
-    public InetSocketAddress getServerAddress() {
+    public InetSocketAddress serverAddress() {
         return serverAddress;
     }
 

@@ -1,10 +1,12 @@
 package org.rakam.kume.transport;
 
 import com.esotericsoftware.kryo.Kryo;
+import com.esotericsoftware.kryo.KryoException;
 import com.esotericsoftware.kryo.io.Input;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.ByteToMessageDecoder;
+import org.rakam.kume.service.ringmap.RingMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -16,6 +18,7 @@ public class PacketDecoder extends ByteToMessageDecoder {
 
     public PacketDecoder() {
         this.kryo = new Kryo();
+        this.kryo.register(RingMap.PutMapOperation.class);
     }
 
     @Override
@@ -32,6 +35,9 @@ public class PacketDecoder extends ByteToMessageDecoder {
             Object o;
             try {
                 o = kryo.readClassAndObject(new Input(data));
+            } catch (KryoException e) {
+                LOGGER.warn("Couldn't deserialize object", e);
+                return;
             } catch (Exception e) {
                 LOGGER.warn("Couldn't deserialize object", e);
                 return;

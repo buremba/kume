@@ -24,7 +24,7 @@ public class RaftMasterElection implements Service {
     }
 
     public void voteElection() {
-        Collection<Member> clusterMembers = bus.getCluster().getClusterMembers();
+        Collection<Member> clusterMembers = bus.getCluster().getMembers();
 
         Map<String, Boolean> map = new ConcurrentHashMap<>();
         CompletableFuture<Boolean> future = new CompletableFuture<>();

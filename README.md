@@ -1,13 +1,13 @@
 Kume
 ================
 
-Kume is a minimalist clustering framework for Java 8. It uses Netty for networking and Kryo for serialization.
+Kume is a lightweight clustering framework for Java 8. It uses Netty for networking and Kryo for serialization.
 It's quite easy to start a node in a cluster:
 ```
 Cluster cluster = new ClusterBuilder()
-    .setServices(services)
-    .setMembers(members)
-    .setServerAddress(serverAddress)
+    .services(services)
+    .members(members)
+    .serverAddress(serverAddress)
     .start();
 ```
 By default, nodes can discover each other using UDP multicast. However you can set TCP addresses when starting the cluster.

@@ -16,7 +16,6 @@ public class Serializer {
 
     public Serializer() {
         kryo.register(Member.class);
-        kryo.register(Cluster.AddMemberRequest.class);
         kryo.register(Cluster.HeartbeatOperation.class);
     }
 

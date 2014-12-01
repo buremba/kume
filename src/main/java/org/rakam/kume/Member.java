@@ -21,10 +21,6 @@ public class Member {
     String id;
 
     @NotNull
-    @FieldSerializer.Bind(DefaultSerializers.BooleanSerializer.class)
-    boolean isMaster = false;
-
-    @NotNull
     @FieldSerializer.Bind(InetSocketAddressSerializer.class)
     InetSocketAddress address;
 
@@ -51,10 +47,6 @@ public class Member {
         return id.hashCode();
     }
 
-    public void master(boolean isMaster) {
-        this.isMaster = isMaster;
-    }
-
     public Member(InetSocketAddress address) {
         this.address = address;
         id = UUID.randomUUID().toString();
@@ -73,14 +65,20 @@ public class Member {
 //    @Override
     public void write(Kryo kryo, Output output) {
         output.writeString(id);
-        output.writeBoolean(isMaster);
         kryo.writeObject(output, address);
     }
 
 //    @Override
     public void read(Kryo kryo, Input input) {
         this.id = input.readString();
-        this.isMaster = input.readBoolean();
         this.address = kryo.readObject(input, InetSocketAddress.class);
+    }
+
+    @Override
+    public String toString() {
+        return "Member{" +
+                "id='" + id + '\'' +
+                ", address=" + address +
+                '}';
     }
 }

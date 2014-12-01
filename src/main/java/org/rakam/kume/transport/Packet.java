@@ -14,6 +14,12 @@ public class Packet {
         this.service = service;
     }
 
+    public Packet(Object data, short service) {
+        this.packetNum = -1;
+        this.data = data;
+        this.service = service;
+    }
+
     public Object getData() {
         return data;
     }

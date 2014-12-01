@@ -6,13 +6,15 @@ import com.google.common.hash.Hashing;
 import org.rakam.kume.Member;
 
 import java.nio.charset.Charset;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Set;
+import java.util.Map;
 
 /**
  * Created by buremba <Burak Emre Kabakcı> on 11/11/14 17:17.
@@ -20,18 +22,20 @@ import java.util.Set;
  */
 public class ConsistentHashRing {
     private final int bucketPerNode;
-    final Node[] buckets;
-    private final HashFunction hashFunction = Hashing.murmur3_128();
+    final Bucket[] buckets;
+    private static final HashFunction hashFunction = Hashing.murmur3_128();
+    private final int replicationFactor;
 
-    public ConsistentHashRing(Collection<Member> members, int bucketPerNode) {
+    public ConsistentHashRing(Collection<Member> members, int bucketPerNode, int replicationFactor) {
         this.bucketPerNode = bucketPerNode;
+        this.replicationFactor = replicationFactor;
 
         // todo: find a way to construct buckets without adding elements one by one.
         Iterator<Member> iterator = members.iterator();
         if(iterator.hasNext()) {
-            Node[] list = findBucketListForNewNode(iterator.next(), bucketPerNode, null);
+            Bucket[] list = findBucketListForNewNode(iterator.next(), bucketPerNode, replicationFactor, null);
             while(iterator.hasNext()) {
-                list = findBucketListForNewNode(iterator.next(), bucketPerNode, list);
+                list = findBucketListForNewNode(iterator.next(), bucketPerNode, replicationFactor, list);
             }
             buckets = list;
         }else {
@@ -39,13 +43,23 @@ public class ConsistentHashRing {
         }
     }
 
-    public List<Node> getBuckets() {
-        return Collections.unmodifiableList(Arrays.asList(buckets));
+    public Map<TokenRange, List<Member>> getBuckets() {
+        HashMap<TokenRange, List<Member>> map = new HashMap<>();
+        for (int i = 0; i < buckets.length; i++) {
+            Bucket start = buckets[i];
+            map.put(new TokenRange(i, start.token, buckets[ringPos(i+1)].token), Collections.unmodifiableList(start.members));
+        }
+        return map;
     }
 
-    private ConsistentHashRing(Node[] buckets, int bucketPerNode) {
+    public Bucket getBucket(int i) {
+        return buckets[i];
+    }
+
+    protected ConsistentHashRing(Bucket[] buckets, int bucketPerNode, int replicationFactor) {
         this.bucketPerNode = bucketPerNode;
         this.buckets = buckets;
+        this.replicationFactor = replicationFactor;
     }
 
     public int findClosest(long l) {
@@ -66,58 +80,19 @@ public class ConsistentHashRing {
         return l > 0 ? high : low;
     }
 
-    public Set<Member> findOwnedNodes(String hash) {
-        long l = hashFunction.hashString(hash, Charset.forName("UTF-8")).asLong();
-        return findNextBackups(findClosest(l), 2);
+    public long hash(String hash) {
+       return hashFunction.hashString(hash, Charset.forName("UTF-8")).asLong();
     }
 
-    public Set<Member> findNextBackups(int bucketId, int numberOfNodes) {
-        HashSet<Member> objects = new HashSet<>(numberOfNodes);
-        int id = bucketId;
-        int addrCount = Math.min(numberOfNodes, buckets.length / bucketPerNode);
-
-        while (objects.size() < addrCount) {
-            objects.add(buckets[id].member);
-            id = (id + 1) % buckets.length;
-        }
-
-        return objects;
-    }
-
-    public Collection<Member> findNode(String hash) {
-        long l = hashFunction.hashString(hash, Charset.forName("UTF-8")).asLong();
-        return findNextBackups(findClosest(l), 2);
-    }
-
-    public boolean isSibling(Member member1, Member member2) {
-        for (int i = 0; i < buckets.length; i++) {
-            if (buckets[i].member.equals(member1)) {
-                Node previous = buckets[ringPos(i-1)];
-                HashSet<Member> nodes = new HashSet<>();
-                nodes.add(previous.member);
-                int a = i;
-                while (nodes.size() < 2) {
-                    nodes.add(buckets[a].member);
-                    a = (a + 1) % buckets.length;
-                }
-                if (nodes.contains(member2)) {
-                    return true;
-                }
-            }
-        }
-        return false;
-    }
-
-    private int ringPos(int i) {
-        int length = buckets.length;
-        return (i % length) + (i < 0 ? length : 0);
+    public int ringPos(int i) {
+        return (i % buckets.length) + (i < 0 ? buckets.length : 0);
     }
 
     public double getTotalRingRange(Member member) {
         double total = 0;
         for (int i = 0; i < buckets.length; i++) {
-            Node current = buckets[i];
-            if(current.member.equals(member)) {
+            Bucket current = buckets[i];
+            if(current.members.contains(member)) {
                 if(i == buckets.length-1) {
                     total += Math.abs((Long.MAX_VALUE-current.token)/2)/(Long.MAX_VALUE/100.0);
                 }else {
@@ -129,19 +104,21 @@ public class ConsistentHashRing {
         return total;
     }
 
-    private static Node[] findBucketListForNewNode(Member member, int bucketPerNode, Node[] buckets) {
+    private static Bucket[] findBucketListForNewNode(Member member, int bucketPerNode, int replicationFactor, Bucket[] buckets) {
         if (buckets == null) {
-            Node[] newNodeList = new Node[bucketPerNode];
+            Bucket[] newBucketList = new Bucket[bucketPerNode];
 
             long token = Long.MAX_VALUE / (bucketPerNode/2);
             for (int i = 0; i < bucketPerNode; i++) {
                 long t = Long.MIN_VALUE + (token * i);
-                newNodeList[i] = new Node(member, t);
+                ArrayList<Member> members = new ArrayList<>(1);
+                members.add(member);
+                newBucketList[i] = new Bucket(members, t);
             }
-            return newNodeList;
+            return newBucketList;
         }
 
-        Node[] newNodeList = Arrays.copyOf(buckets, buckets.length + bucketPerNode);
+        Bucket[] newBucketList = Arrays.copyOf(buckets, buckets.length + bucketPerNode);
 
         TokenGapPair[] tuples = new TokenGapPair[buckets.length];
         for (int i = 0; i < buckets.length; i++) {
@@ -154,38 +131,59 @@ public class ConsistentHashRing {
         for (int idx = 0; idx < bucketPerNode; idx++) {
             // todo: check the gap of next tuple and divide the current one if the gap > nextGap*2
             TokenGapPair current = tuples[idx];
-            Node element = new Node(member, current.token + (Long) current.gap / 2);
-            newNodeList[idx + buckets.length] = element;
-        }
-        Arrays.sort(newNodeList, (o1, o2) -> o2.token > o1.token ? -1 : (o2.token == o1.token ? 0 : 1));
 
-        return newNodeList;
+            HashSet<Member> members = new HashSet<>();
+            members.add(member);
+            for (int i = 0, x = idx; i < buckets.length; i++) {
+                for (Member member1 : buckets[x++ % buckets.length].members) {
+                    members.add(member1);
+                    if(members.size()==replicationFactor)
+                        break;
+                }
+            }
+            Bucket element = new Bucket(new ArrayList(members), current.token + current.gap / 2);
+            newBucketList[idx + buckets.length] = element;
+        }
+        Arrays.sort(newBucketList, (o1, o2) -> o2.token > o1.token ? -1 : (o2.token == o1.token ? 0 : 1));
+
+        return newBucketList;
     }
 
     public ConsistentHashRing addNode(Member member) {
-        Node[] buckets = findBucketListForNewNode(member, bucketPerNode, this.buckets);
-        return new ConsistentHashRing(buckets, bucketPerNode);
+        Bucket[] buckets = findBucketListForNewNode(member, bucketPerNode, replicationFactor, this.buckets);
+        return new ConsistentHashRing(buckets, bucketPerNode, replicationFactor);
     }
 
     public ConsistentHashRing removeNode(Member member) {
-        List<Node> result = Lists.newArrayList(buckets);
+        List<Bucket> result = Lists.newArrayList(this.buckets);
 
-        for (int i = 0; i < result.size(); i++) {
-            if (result.get(i).member.equals(member));
-            result.remove(i);
+        Iterator<Bucket> iterator = result.iterator();
+        while(iterator.hasNext()) {
+            Bucket next = iterator.next();
+            if (next.members.contains(member))
+                iterator.remove();
         }
 
-        Node[] nodes = new Node[result.size()];
-        result.toArray(nodes);
-        return new ConsistentHashRing(nodes, bucketPerNode);
+        Bucket[] buckets = new Bucket[result.size()];
+        result.toArray(buckets);
+        return new ConsistentHashRing(buckets, bucketPerNode, replicationFactor);
     }
 
-    public static class Node {
-        public final long token;
-        public final Member member;
+    public Bucket findBucket(String key) {
+        return buckets[findClosest(hash(key))];
+    }
 
-        public Node(Member member, long token) {
-            this.member = member;
+    public int findBucketId(String key) {
+        return findClosest(hash(key));
+    }
+
+
+    public static class Bucket {
+        public long token;
+        public ArrayList<Member> members;
+
+        public Bucket(ArrayList<Member> members, long token) {
+            this.members = members;
             this.token = token;
         }
     }
@@ -197,6 +195,38 @@ public class ConsistentHashRing {
         public TokenGapPair(long token, long gap) {
             this.token = token;
             this.gap = gap;
+        }
+    }
+
+    public class TokenRange {
+        public final long start;
+        public final long end;
+        public final int id;
+
+        private TokenRange(int id, long start, long end) {
+            this.id = id;
+            this.start = start;
+            this.end = end;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (!(o instanceof TokenRange)) return false;
+
+            TokenRange that = (TokenRange) o;
+
+            if (end != that.end) return false;
+            if (start != that.start) return false;
+
+            return true;
+        }
+
+        @Override
+        public int hashCode() {
+            int result = (int) (start ^ (start >>> 32));
+            result = 31 * result + (int) (end ^ (end >>> 32));
+            return result;
         }
     }
 }

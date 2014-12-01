@@ -9,6 +9,8 @@ import io.netty.util.ReferenceCountUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.net.ConnectException;
+
 /**
 * Created by buremba <Burak Emre Kabakcı> on 23/11/14 17:38.
 */
@@ -42,14 +44,20 @@ public class MulticastChannelAdapter extends ChannelInboundHandlerAdapter {
                 if (sender == null || sender.equals(cluster.getLocalMember()))
                     return;
 
-                req.run(cluster, new OperationContext(cluster, ctx));
+                req.run(cluster, null);
             }
-        } catch (Exception e) {
-            LOGGER.error("multicast server couldn't handle package. ", e);
+//        } catch (Exception e) {
+//            LOGGER.error("multicast server couldn't handle package. ", e);
         } finally {
             ReferenceCountUtil.release(msg);
         }
+    }
 
-
+    @Override
+    public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
+        if(cause instanceof ConnectException) {
+            /* most likely the server is down but we don't do anything here
+            since the heartbeat mechanism automatically removes the member from the cluster */
+        }
     }
 }

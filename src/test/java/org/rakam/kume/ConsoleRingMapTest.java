@@ -7,6 +7,7 @@ import org.rakam.kume.util.ConsistentHashRing;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -19,10 +20,10 @@ public class ConsoleRingMapTest {
     @Test
     public void testMap() throws InterruptedException {
         ServiceInitializer services = new ServiceInitializer()
-                .add(bus -> new RingMap(bus));
+                .add(bus -> new RingMap(bus, 2));
 
-        Cluster cluster0 = new ClusterBuilder().setServices(services).start();
-        Cluster cluster1 = new ClusterBuilder().setServices(services).start();
+        Cluster cluster0 = new ClusterBuilder().services(services).start();
+        Cluster cluster1 = new ClusterBuilder().services(services).start();
 
         RingMap ringMap0 = cluster0.getService(RingMap.class);
         RingMap ringMap1 = cluster0.getService(RingMap.class);
@@ -53,11 +54,6 @@ public class ConsoleRingMapTest {
 
 
         countDownLatch.await();
-        ringMap0.size().thenAccept(x -> {
-            System.out.println(x);
-        });
-
-//        cluster0.close();
     }
 
     // only for debugging map using console
@@ -67,21 +63,19 @@ public class ConsoleRingMapTest {
         for (Cluster cluster : list) {
             RingMap service = cluster.getService(RingMap.class);
             double totalRingRange = service.getRing().getTotalRingRange(cluster.getLocalMember());
-            System.out.format("| %-17s | %-14f | %-8d |%n", cluster.getLocalMember().getAddress(), totalRingRange, service.localMap().size());
+            System.out.format("| %-17s | %-14f | %-8d |%n", cluster.getLocalMember().getAddress(), totalRingRange, service.getLocalSize());
         }
         System.out.format("+-------------------+----------------+----------+%n");
 
-        List<ConsistentHashRing.Node> buckets = list.iterator().next().getService(RingMap.class).getRing().getBuckets();
-        for (int i = 0; i < buckets.size(); i++) {
-            ConsistentHashRing.Node current = buckets.get(i);
-            long a = i == buckets.size()-1 ? Long.MAX_VALUE: buckets.get(i+1).token;
-            double percentage = Math.abs((a-current.token)/2)/(Long.MAX_VALUE/100.0);
+        Map<ConsistentHashRing.TokenRange, List<Member>> buckets = list.iterator().next().getService(RingMap.class).getRing().getBuckets();
+
+        buckets.forEach((token, members) -> {
+            double percentage = (Math.abs(token.end-token.start)/2)/(Long.MAX_VALUE/100.0);
             int i1 = ((Double) percentage).intValue()-1;
-            System.out.print(i);
+            System.out.print(token.id);
             for (int i2 = 0; i2 < i1; i2++)
                 System.out.print("-");
-
-        }
+        });
         System.out.println();
         System.out.println();
     }

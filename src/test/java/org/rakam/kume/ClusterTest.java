@@ -17,9 +17,9 @@ public class ClusterTest extends KumeTest {
         ServiceInitializer constructors = new ServiceInitializer()
               .add((bus) -> new MyService(bus, latch));
 
-        Cluster cluster0 = new ClusterBuilder().setServices(constructors).start();
-        Cluster cluster1 = new ClusterBuilder().setServices(constructors).start();
-        Cluster cluster2 = new ClusterBuilder().setServices(constructors).start();
+        Cluster cluster0 = new ClusterBuilder().services(constructors).start();
+        Cluster cluster1 = new ClusterBuilder().services(constructors).start();
+        Cluster cluster2 = new ClusterBuilder().services(constructors).start();
 
         waitForDiscovery(cluster0, 2);
 

@@ -5,6 +5,7 @@ import com.esotericsoftware.kryo.io.Output;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.MessageToByteEncoder;
+import org.rakam.kume.service.ringmap.RingMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -17,6 +18,7 @@ public class PacketEncoder extends MessageToByteEncoder<Packet> {
 
     public PacketEncoder() {
         this.kryo = new Kryo();
+        this.kryo.register(RingMap.PutMapOperation.class);
     }
 
     @Override

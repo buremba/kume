@@ -25,15 +25,16 @@ public class ServerChannelAdapter extends ChannelInboundHandlerAdapter {
 
     @Override
     public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
-        System.out.println(Thread.currentThread().getId());
+//        LOGGER.debug("server {} got message {}", ctx.channel().localAddress(), msg);
+
         Packet read = (Packet) msg;
         Object o = read.getData();
-        OperationContext ctx1 = new OperationContext(eventBus, ctx, read.packetNum);
+        OperationContext ctx1 = new OperationContext(ctx, read.service, read.packetNum);
         Service service = services.get(read.service);
 
         if (o instanceof Request) {
             Request o1 = (Request) o;
-            o1.run(service, ctx1);
+            service.handle(ctx1, o1);
         } else {
             service.handle(ctx1, read.data);
         }
