@@ -29,7 +29,7 @@ public class ServerChannelAdapter extends ChannelInboundHandlerAdapter {
 
         Packet read = (Packet) msg;
         Object o = read.getData();
-        OperationContext ctx1 = new OperationContext(ctx, read.service, read.packetNum);
+        RemoteOperationContext ctx1 = new RemoteOperationContext(ctx, read.service, read.sequence, null);
         Service service = services.get(read.service);
 
         if (o instanceof Request) {

@@ -1,25 +1,19 @@
-package org.rakam.kume.transport;
+package org.rakam.kume.transport.serialization;
 
 import com.esotericsoftware.kryo.Kryo;
 import com.esotericsoftware.kryo.io.Input;
 import com.esotericsoftware.kryo.io.Output;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
-import org.rakam.kume.Cluster;
-import org.rakam.kume.Member;
 
 /**
  * Created by buremba <Burak Emre Kabakcı> on 19/11/14 00:51.
  */
 public class Serializer {
-    private final Kryo kryo = new Kryo();
-
-    public Serializer() {
-        kryo.register(Member.class);
-        kryo.register(Cluster.HeartbeatOperation.class);
-    }
 
     public ByteBuf toByteBuf(Object obj) {
+        Kryo kryo = KryoFactory.getKryoInstance();
+
         Output output = new Output(64, 4096);
         output.setPosition(2);
         kryo.writeClassAndObject(output, obj);
@@ -32,12 +26,10 @@ public class Serializer {
     }
 
     public <T> T toObject(ByteBuf obj, int size) {
+        Kryo kryo = KryoFactory.getKryoInstance();
+
         byte[] bytes = new byte[size];
         obj.readBytes(bytes);
         return (T) kryo.readClassAndObject(new Input(bytes));
-    }
-
-    public <T> T toObject(ByteBuf obj, Class<T> clazz) {
-        return kryo.readObject(new Input(obj.array()), clazz);
     }
 }

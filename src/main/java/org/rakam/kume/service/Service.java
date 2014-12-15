@@ -13,6 +13,6 @@ public interface Service {
         request.run(this, ctx);
     }
 
-    void onStart();
-    void onClose();
+    default void onClose() {
+    }
 }

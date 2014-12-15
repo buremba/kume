@@ -1,11 +1,28 @@
 package org.rakam.kume;
 
+import org.junit.Test;
+
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 
 /**
  * Created by buremba <Burak Emre Kabakcı> on 25/11/14 18:51.
  */
 public class KumeTest {
+
+    @Test
+    public void waitForDiscovery() {
+        CompletableFuture<Void> f = new CompletableFuture<>();
+
+        CompletableFuture<Void> c = f.thenAccept(x -> {
+            System.out.println(1);
+        });
+        CompletableFuture<Void> d = c.thenAccept(x -> {
+            System.out.println(2);
+        });
+
+        c.complete(null);
+    }
 
     public static void waitForDiscovery(Cluster cluster, int numberOfInstances) throws InterruptedException {
         int i = numberOfInstances - cluster.getMembers().size();
@@ -43,5 +60,13 @@ public class KumeTest {
             }
         });
         countDownLatch.await();
+    }
+
+    @Test
+    public void test() {
+        CompletableFuture<Boolean> booleanCompletableFuture = CompletableFuture.completedFuture(true);
+        CompletableFuture.allOf(booleanCompletableFuture).thenRun(() -> {
+            System.out.println("a");
+        });
     }
 }

@@ -5,7 +5,7 @@ import com.esotericsoftware.kryo.io.Output;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.MessageToByteEncoder;
-import org.rakam.kume.service.ringmap.RingMap;
+import org.rakam.kume.transport.serialization.KryoFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -17,19 +17,19 @@ public class PacketEncoder extends MessageToByteEncoder<Packet> {
     final static Logger LOGGER = LoggerFactory.getLogger(PacketEncoder.class);
 
     public PacketEncoder() {
-        this.kryo = new Kryo();
-        this.kryo.register(RingMap.PutMapOperation.class);
+        this.kryo = KryoFactory.getKryoInstance();
     }
 
     @Override
     protected void encode(ChannelHandlerContext ctx, Packet msg, ByteBuf out) throws Exception {
         // TODO: maybe we can use one big output in order to avoid GC garbage
         try {
-            Output output = new Output(64, 2<<20);
+            Output output = new Output(2<<8, 2<<20);
             kryo.writeClassAndObject(output, msg.data);
-            out.writeInt(msg.packetNum);
+
+            out.writeInt(msg.sequence);
             out.writeShort(msg.service);
-            out.writeBytes(output.getBuffer(), 0 , output.position());
+            out.writeBytes(output.getBuffer(), 0, output.position());
         } catch (Exception e) {
             LOGGER.error("error while serializing packet {}", msg, e);
         }

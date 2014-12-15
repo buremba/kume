@@ -2,6 +2,7 @@ package org.rakam.kume.service;
 
 import org.rakam.kume.Cluster;
 import org.rakam.kume.OperationContext;
+import org.rakam.kume.RemoteOperationContext;
 import org.rakam.kume.Request;
 
 import java.util.Arrays;
@@ -26,11 +27,6 @@ public abstract class ServiceRouter implements Service {
     @Override
     public void handle(OperationContext ctx, Request request) {
         subServices[getServiceId(request)].handle(ctx, request);
-    }
-
-    @Override
-    public void onStart() {
-        Arrays.stream(subServices).forEach(x -> x.onStart());
     }
 
     @Override

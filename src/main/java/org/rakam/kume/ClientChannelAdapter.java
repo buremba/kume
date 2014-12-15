@@ -24,10 +24,9 @@ public class ClientChannelAdapter extends ChannelInboundHandlerAdapter {
 
     @Override
     public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
-        LOGGER.debug("client {} got message {}", ctx.channel().localAddress(), msg);
         Packet read = (Packet) msg;
-        CompletableFuture<Result> ifPresent = messageHandlers.remove(read.packetNum);
-        LOGGER.debug("got response for {}: {}", read.packetNum, read.data);
+        CompletableFuture<Result> ifPresent = messageHandlers.remove(read.sequence);
+//        LOGGER.debug("got response for {}: {}", read.sequence, read.data);
         if (ifPresent != null)
             ifPresent.complete(new Result(read.getData()));
         else

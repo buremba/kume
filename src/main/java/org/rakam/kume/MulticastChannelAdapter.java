@@ -45,10 +45,12 @@ public class MulticastChannelAdapter extends ChannelInboundHandlerAdapter {
                     return;
 
                 req.run(cluster, null);
+            }else {
+                LOGGER.warn("multicast server in member {}, couldn't handle package: {}", cluster.getLocalMember(), msg);
             }
-//        } catch (Exception e) {
-//            LOGGER.error("multicast server couldn't handle package. ", e);
-        } finally {
+        } catch (Exception e) {
+            LOGGER.error("an error occurred while processing data in multicast server", e);
+        }finally {
             ReferenceCountUtil.release(msg);
         }
     }

@@ -4,18 +4,18 @@ package org.rakam.kume.transport;
 * Created by buremba <Burak Emre Kabakcı> on 15/11/14 14:19.
 */
 public class Packet {
-    public final int packetNum;
+    public final int sequence;
     public Object data;
     public short service;
 
-    public Packet(int packetNum, Object data, short service) {
-        this.packetNum = packetNum;
+    public Packet(int sequence, Object data, short service) {
+        this.sequence = sequence;
         this.data = data;
         this.service = service;
     }
 
     public Packet(Object data, short service) {
-        this.packetNum = -1;
+        this.sequence = -1;
         this.data = data;
         this.service = service;
     }
@@ -30,7 +30,7 @@ public class Packet {
     @Override
     public String toString() {
         return "Packet{" +
-                "packetNum=" + packetNum +
+                "sequence=" + sequence +
                 ", data=" + data +
                 '}';
     }

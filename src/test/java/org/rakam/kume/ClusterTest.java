@@ -48,15 +48,5 @@ public class ClusterTest extends KumeTest {
             if(request.equals(1))
                 latch.countDown();
         }
-
-        @Override
-        public void onStart() {
-
-        }
-
-        @Override
-        public void onClose() {
-
-        }
     }
 }

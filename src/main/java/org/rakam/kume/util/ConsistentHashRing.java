@@ -1,6 +1,7 @@
 package org.rakam.kume.util;
 
 import com.google.common.collect.Lists;
+import com.google.common.collect.Sets;
 import com.google.common.hash.HashFunction;
 import com.google.common.hash.Hashing;
 import org.rakam.kume.Member;
@@ -9,20 +10,23 @@ import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
+import java.util.stream.Stream;
 
 /**
  * Created by buremba <Burak Emre Kabakcı> on 11/11/14 17:17.
- * This class is immutable.
  */
 public class ConsistentHashRing {
     private final int bucketPerNode;
-    final Bucket[] buckets;
+    private final Bucket[] buckets;
     private static final HashFunction hashFunction = Hashing.murmur3_128();
     private final int replicationFactor;
 
@@ -32,34 +36,63 @@ public class ConsistentHashRing {
 
         // todo: find a way to construct buckets without adding elements one by one.
         Iterator<Member> iterator = members.iterator();
-        if(iterator.hasNext()) {
-            Bucket[] list = findBucketListForNewNode(iterator.next(), bucketPerNode, replicationFactor, null);
-            while(iterator.hasNext()) {
-                list = findBucketListForNewNode(iterator.next(), bucketPerNode, replicationFactor, list);
+        if (iterator.hasNext()) {
+            Bucket[] list = findBucketListForNewNode(iterator.next(), null);
+            while (iterator.hasNext()) {
+                list = findBucketListForNewNode(iterator.next(), list);
             }
             buckets = list;
-        }else {
+        } else {
             throw new IllegalArgumentException("member list must have at least one member");
         }
-    }
-
-    public Map<TokenRange, List<Member>> getBuckets() {
-        HashMap<TokenRange, List<Member>> map = new HashMap<>();
-        for (int i = 0; i < buckets.length; i++) {
-            Bucket start = buckets[i];
-            map.put(new TokenRange(i, start.token, buckets[ringPos(i+1)].token), Collections.unmodifiableList(start.members));
-        }
-        return map;
-    }
-
-    public Bucket getBucket(int i) {
-        return buckets[i];
     }
 
     protected ConsistentHashRing(Bucket[] buckets, int bucketPerNode, int replicationFactor) {
         this.bucketPerNode = bucketPerNode;
         this.buckets = buckets;
         this.replicationFactor = replicationFactor;
+    }
+
+    public String toString() {
+        StringBuilder str = new StringBuilder();
+        getBuckets().forEach((range, members) -> {
+            str.append("[" + range.start + "-" + range.end + ", " + members.size() + " members]");
+        });
+        return str.toString();
+    }
+
+    public Map<TokenRange, List<Member>> getBuckets() {
+        return getBuckets(buckets);
+    }
+
+    private Map<TokenRange, List<Member>> getBuckets(Bucket[] buckets) {
+        return IntStream.range(0, buckets.length)
+                .mapToObj(i -> {
+                    Bucket bucket = buckets[i];
+                    TokenRange tokenRange = new TokenRange(i, bucket.token, getBucketFromRing(buckets, i + 1).token);
+                    return new Tuple<>(tokenRange, bucket.members);
+                }).collect(Collectors.toMap(Tuple::_1, Tuple::_2));
+    }
+
+    public Bucket getBucket(int i) {
+        int length = buckets.length;
+        if (i >= length)
+            i = i % length;
+
+        return buckets[i >= 0 ? i : i + length];
+    }
+
+
+    public int getBucketCount() {
+        return buckets.length;
+    }
+
+    public int getMemberCount() {
+        return buckets.length / bucketPerNode;
+    }
+
+    public TokenRange getBucketRange(int i) {
+        return new TokenRange(i, buckets[i].token, getBucketFromRing(buckets, i + 1).token);
     }
 
     public int findClosest(long l) {
@@ -77,26 +110,26 @@ public class ConsistentHashRing {
                 return mid;
         }
 
-        return l > 0 ? high : low;
+        return high;
     }
 
-    public long hash(String hash) {
-       return hashFunction.hashString(hash, Charset.forName("UTF-8")).asLong();
+    public static long hash(String hash) {
+        return hashFunction.hashString(hash, Charset.forName("UTF-8")).asLong();
     }
 
-    public int ringPos(int i) {
-        return (i % buckets.length) + (i < 0 ? buckets.length : 0);
+    private Bucket getBucketFromRing(Bucket[] buckets, int i) {
+        return buckets[(i % buckets.length) + (i < 0 ? buckets.length : 0)];
     }
 
     public double getTotalRingRange(Member member) {
         double total = 0;
         for (int i = 0; i < buckets.length; i++) {
             Bucket current = buckets[i];
-            if(current.members.contains(member)) {
-                if(i == buckets.length-1) {
-                    total += Math.abs((Long.MAX_VALUE-current.token)/2)/(Long.MAX_VALUE/100.0);
-                }else {
-                    total += Math.abs((buckets[i+1].token-current.token)/2)/(Long.MAX_VALUE/100.0);
+            if (current.members.contains(member)) {
+                if (i == buckets.length - 1) {
+                    total += (((Long.MAX_VALUE - current.token) + (buckets[0].token - Long.MIN_VALUE))/2)  / (Long.MAX_VALUE / 100.0);
+                } else {
+                    total += Math.abs((buckets[i + 1].token - current.token) / 2) / (Long.MAX_VALUE / 100.0);
                 }
 
             }
@@ -104,97 +137,195 @@ public class ConsistentHashRing {
         return total;
     }
 
-    private static Bucket[] findBucketListForNewNode(Member member, int bucketPerNode, int replicationFactor, Bucket[] buckets) {
+    private Bucket[] findBucketListForNewNode(Member member, Bucket[] buckets) {
         if (buckets == null) {
-            Bucket[] newBucketList = new Bucket[bucketPerNode];
+            long token = Long.MAX_VALUE / (bucketPerNode / 2);
 
-            long token = Long.MAX_VALUE / (bucketPerNode/2);
-            for (int i = 0; i < bucketPerNode; i++) {
+            return IntStream.range(0, bucketPerNode).mapToObj(i -> {
                 long t = Long.MIN_VALUE + (token * i);
-                ArrayList<Member> members = new ArrayList<>(1);
-                members.add(member);
-                newBucketList[i] = new Bucket(members, t);
-            }
-            return newBucketList;
+                return new Bucket(Sets.newHashSet(member), t);
+            }).toArray(Bucket[]::new);
         }
 
         Bucket[] newBucketList = Arrays.copyOf(buckets, buckets.length + bucketPerNode);
 
-        TokenGapPair[] tuples = new TokenGapPair[buckets.length];
-        for (int i = 0; i < buckets.length; i++) {
-            long nextBucketPos = (i+1 == buckets.length) ? Long.MAX_VALUE : buckets[i + 1].token;
-            long gap = buckets[i].token - nextBucketPos;
-            tuples[i] = new TokenGapPair(buckets[i].token, Math.abs(gap));
-        }
 
-        Arrays.sort(tuples, (o1, o2) -> (o2.gap > o1.gap) ? 1 : ((o2.gap < o1.gap) ? -1 : 0));
-        for (int idx = 0; idx < bucketPerNode; idx++) {
-            // todo: check the gap of next tuple and divide the current one if the gap > nextGap*2
-            TokenGapPair current = tuples[idx];
+        // find the members who owns less data than other to use them as replica of new buckets
+        Map<Member, Long> result = new HashMap<>();
+        getBuckets(buckets)
+                .entrySet().stream()
+                .filter(x -> !x.getValue().contains(member))
+                .forEach(x -> x.getValue().forEach(z -> result.merge(z, x.getKey().gap()/2, Long::sum)));
+        Set<Map.Entry<Member, Long>> resultSet = result.entrySet();
+
+        // find the larger gaps to and divide them in order to create new buckets
+        TokenRange[] tokens = getBuckets(buckets).entrySet().stream()
+                .sorted((o1, o2) -> {
+                    int compare = Long.compare(o2.getKey().gap(), o1.getKey().gap());
+                    if (compare == 0) {
+                        // we compare the nodes that own this bucket and choose the bucket
+                        // that has members that owns minimum range on the ring.
+                        long sum1 = o1.getValue().stream().mapToLong(x -> result.get(x)).sum();
+                        long sum2 = o2.getValue().stream().mapToLong(x -> result.get(x)).sum();
+                        compare = Long.compare(sum2, sum1);
+                        if (compare == 0) {
+                            // it's pointless but if such condition occurs we need
+                            // a way that all nodes agree.
+                            return Long.compare(o1.getKey().start, o2.getKey().start);
+                        }
+                    }
+                    return compare;
+                }).limit(8).map(x -> x.getKey()).toArray(TokenRange[]::new);
+
+        for (int idx = 0; idx < tokens.length; idx++) {
+            TokenRange current = tokens[idx];
+            long gap = current.gap() / 2;
 
             HashSet<Member> members = new HashSet<>();
             members.add(member);
-            for (int i = 0, x = idx; i < buckets.length; i++) {
-                for (Member member1 : buckets[x++ % buckets.length].members) {
-                    members.add(member1);
-                    if(members.size()==replicationFactor)
-                        break;
-                }
-            }
-            Bucket element = new Bucket(new ArrayList(members), current.token + current.gap / 2);
+
+            IntStream.range(0, replicationFactor-1).forEach(i -> {
+                Map.Entry<Member, Long> m = resultSet.stream().sorted((x, y) -> x.getValue()
+                        .compareTo(y.getValue())).findFirst().get();
+                members.add(m.getKey());
+                m.setValue(m.getValue()+gap);
+            });
+
+            Bucket element = new Bucket(members, current.start + gap);
             newBucketList[idx + buckets.length] = element;
         }
-        Arrays.sort(newBucketList, (o1, o2) -> o2.token > o1.token ? -1 : (o2.token == o1.token ? 0 : 1));
+        Arrays.sort(newBucketList, (o1, o2) -> Long.compare(o1.token, o2.token));
+
+        if (buckets.length / bucketPerNode < replicationFactor) {
+            for (int i = 0; i < newBucketList.length; i++) {
+                Bucket oldBucket = newBucketList[i];
+
+                if (oldBucket.members.size() < replicationFactor) {
+                    HashSet members = new HashSet(oldBucket.members);
+                    members.add(member);
+                    newBucketList[i] = new Bucket(members, newBucketList[i].token);
+                }
+            }
+        }
 
         return newBucketList;
     }
 
     public ConsistentHashRing addNode(Member member) {
-        Bucket[] buckets = findBucketListForNewNode(member, bucketPerNode, replicationFactor, this.buckets);
+        if (getMembers().contains(member)) {
+            return new ConsistentHashRing(buckets, bucketPerNode, replicationFactor);
+        }
+
+        Bucket[] buckets = findBucketListForNewNode(member, this.buckets);
         return new ConsistentHashRing(buckets, bucketPerNode, replicationFactor);
     }
 
     public ConsistentHashRing removeNode(Member member) {
-        List<Bucket> result = Lists.newArrayList(this.buckets);
-
-        Iterator<Bucket> iterator = result.iterator();
-        while(iterator.hasNext()) {
-            Bucket next = iterator.next();
-            if (next.members.contains(member))
-                iterator.remove();
+        if (!getMembers().contains(member)) {
+            return new ConsistentHashRing(buckets, bucketPerNode, replicationFactor);
         }
 
-        Bucket[] buckets = new Bucket[result.size()];
-        result.toArray(buckets);
-        return new ConsistentHashRing(buckets, bucketPerNode, replicationFactor);
-    }
+        List<Bucket> result = Lists.newArrayList(this.buckets);
+        int newMemberSize = (buckets.length / bucketPerNode) - 1;
 
-    public Bucket findBucket(String key) {
-        return buckets[findClosest(hash(key))];
+        // remove smallest buckets which is replicated by member
+        getBuckets().entrySet().stream()
+                .filter(x -> x.getValue().contains(member))
+                .sorted((x, y) -> x.getKey().gap() > y.getKey().gap() ? 1 : -1)
+                .limit(bucketPerNode).map(x -> x.getKey().id)
+                .sorted((x, y) -> x.compareTo(y)) // we need reverse order, otherwise the indexes change
+                .forEach(i -> result.remove(i));
+
+        // replace this member to another in other buckets which is replicated by this member
+        Stream<Bucket> resultArr = result.stream()
+                .filter(x -> x.members.contains(member))
+                .map(bucket -> {
+                    HashSet arrayList = new HashSet(bucket.members);
+                    arrayList.remove(member);
+                    if (newMemberSize >= replicationFactor) {
+                        Map<Member, Long> memberTokenRange = new HashMap<>();
+                        getBuckets().forEach((val, members) ->
+                                members.forEach(m -> memberTokenRange.merge(m, val.gap(), Long::sum)));
+                        Optional<Map.Entry<Member, Long>> first = memberTokenRange.entrySet().stream()
+                                .filter(x -> !x.getKey().equals(member))
+                                .sorted((o1, o2) -> o1.getValue().longValue() > o2.getValue().longValue() ? 1 : -1)
+                                .findFirst();
+                        first.ifPresent(entry -> arrayList.add(entry.getKey()));
+                    }
+                    return new Bucket(arrayList, bucket.token);
+                });
+
+        return new ConsistentHashRing(resultArr.toArray(Bucket[]::new), bucketPerNode, replicationFactor);
     }
 
     public int findBucketId(String key) {
         return findClosest(hash(key));
     }
 
+    public Set<Member> getMembers() {
+        HashSet<Member> members = new HashSet<>();
+
+        for (Bucket bucket : buckets) {
+            members.addAll(bucket.members);
+        }
+
+        return members;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (!(o instanceof ConsistentHashRing)) return false;
+
+        ConsistentHashRing that = (ConsistentHashRing) o;
+
+        if (bucketPerNode != that.bucketPerNode) return false;
+        if (replicationFactor != that.replicationFactor) return false;
+        if (!Arrays.equals(buckets, that.buckets)) return false;
+
+        return true;
+    }
+
+    @Override
+    public int hashCode() {
+        int result = bucketPerNode;
+        result = 31 * result + Arrays.hashCode(buckets);
+        result = 31 * result + replicationFactor;
+        return result;
+    }
 
     public static class Bucket {
         public long token;
+
+//        @CollectionSerializer.BindCollection(
+//                elementSerializer = UnmodifiableCollectionsSerializer.class,
+//                elementClass = Member.class,
+//                elementsCanBeNull = false)
         public ArrayList<Member> members;
 
-        public Bucket(ArrayList<Member> members, long token) {
-            this.members = members;
+        public Bucket(Set<Member> members, long token) {
+            this.members = new ArrayList<>(members);
             this.token = token;
         }
-    }
 
-    private static class TokenGapPair {
-        public final long token;
-        public final long gap;
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (!(o instanceof Bucket)) return false;
 
-        public TokenGapPair(long token, long gap) {
-            this.token = token;
-            this.gap = gap;
+            Bucket bucket = (Bucket) o;
+
+            if (token != bucket.token) return false;
+            if (!members.equals(bucket.members)) return false;
+
+            return true;
+        }
+
+        @Override
+        public int hashCode() {
+            int result = (int) (token ^ (token >>> 32));
+            result = 31 * result + members.hashCode();
+            return result;
         }
     }
 
@@ -207,6 +338,19 @@ public class ConsistentHashRing {
             this.id = id;
             this.start = start;
             this.end = end;
+        }
+
+        @Override
+        public String toString() {
+            return "TokenRange{" +
+                    "start=" + start +
+                    ", end=" + end +
+                    ", bucketId=" + id +
+                    '}';
+        }
+
+        public long gap() {
+            return Math.abs(end - start);
         }
 
         @Override

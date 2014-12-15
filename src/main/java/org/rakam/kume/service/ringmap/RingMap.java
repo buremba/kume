@@ -1,6 +1,5 @@
 package org.rakam.kume.service.ringmap;
 
-import io.netty.channel.ChannelFuture;
 import org.rakam.kume.Cluster;
 import org.rakam.kume.Member;
 import org.rakam.kume.MembershipListener;
@@ -17,12 +16,12 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -38,9 +37,9 @@ public class RingMap implements MembershipListener, Service {
     Cluster.ServiceContext<RingMap> cluster;
 
     private final Member localMember;
-    private boolean paused;
     private final int replicationFactor;
     private LinkedList<MigrationListener> migrationListeners = new LinkedList<>();
+    private Map<ConsistentHashRing.TokenRange, Map<String, Integer>> dataWaitingForMigration = new HashMap<>();
 
     public RingMap(Cluster.ServiceContext cluster, int replicationFactor) {
         this.cluster = cluster;
@@ -49,143 +48,231 @@ public class RingMap implements MembershipListener, Service {
         cluster.getCluster().addMembershipListener(this);
         localMember = cluster.getCluster().getLocalMember();
 
-        map = Stream.generate(() -> new ConcurrentHashMap<>()).limit(8*replicationFactor)
-                .toArray(value -> new ConcurrentHashMap[8*replicationFactor]);
-        setRing(new ConsistentHashRing(cluster.getCluster().getMembers(), 8, replicationFactor));
+        map = createEmptyMap();
+
+        ConsistentHashRing newRing = new ConsistentHashRing(cluster.getCluster().getMembers(), 8, replicationFactor);
+        ring = newRing;
+        bucketIds = createBucketForRing(newRing);
     }
 
-    private void setRing(ConsistentHashRing newRing) {
-        ring = newRing;
-        bucketIds = ring.getBuckets().entrySet().stream()
+    private int[] createBucketForRing(ConsistentHashRing ring) {
+        return ring.getBuckets().entrySet().stream()
                 .filter(entry -> entry.getValue().contains(localMember))
-                .mapToInt(entry -> entry.getKey().id).toArray();
+                .mapToInt(entry -> entry.getKey().id).sorted().toArray();
+    }
+
+    private ConcurrentHashMap[] createEmptyMap() {
+        return Stream.generate(() -> new ConcurrentHashMap<>()).limit(8 * replicationFactor)
+                .toArray(value -> new ConcurrentHashMap[8 * replicationFactor]);
+    }
+
+    private void printMapSize() {
+        System.out.print("map: ");
+        for (ConcurrentHashMap<String, Integer> m : map) {
+            System.out.print("[" + m.size() + "]");
+        }
+        System.out.println();
     }
 
     @Override
     public void memberAdded(Member member) {
 //        cluster.getCluster().pause();
+        printMapSize();
+        Result clusterInformation = cluster.ask(member, new Request<RingMap>() {
+            @Override
+            public void run(RingMap service, OperationContext ctx) {
+                Map<String, Number> hashMap = new HashMap();
+                int size = service.cluster.getCluster().getMembers().size();
+                hashMap.put("memberCount", size);
+                hashMap.put("startTime", service.cluster.startTime());
+                ctx.reply(hashMap);
+            }
+        }).join();
 
-        try {
-            Result clusterInformation = cluster.ask(member, new Request<RingMap>() {
-                @Override
-                public void run(RingMap service, OperationContext ctx) {
-                    Map<String, Number> hashMap = new HashMap();
-                    hashMap.put("memberCount", service.cluster.getCluster().getMembers().size());
-                    hashMap.put("startTime", service.cluster.startTime());
-                    ctx.reply(hashMap);
-                }
-            }).get();
-
-            if (clusterInformation.isSucceeded()) {
-                Map<String, Number> data = (Map<String, Number>) clusterInformation.getData();
-                int myClusterSize = cluster.getCluster().getMembers().size() - 1;
-                int otherClusterSize = data.get("memberCount").intValue();
-                if (otherClusterSize > myClusterSize) {
+        if (clusterInformation.isSucceeded()) {
+            Map<String, Number> data = (Map<String, Number>) clusterInformation.getData();
+            int myClusterSize = cluster.getCluster().getMembers().size() - 1;
+            int otherClusterSize = data.get("memberCount").intValue();
+            if (otherClusterSize > myClusterSize) {
+                joinCluster(member);
+                return;
+            } else if (otherClusterSize == myClusterSize) {
+                long startTime = data.get("startTime").longValue();
+                if (startTime < cluster.startTime()) {
                     joinCluster(member);
                     return;
-                } else if (otherClusterSize == myClusterSize) {
-                    long startTime = data.get("startTime").longValue();
-                    if (startTime < cluster.startTime()) {
-                        joinCluster(member);
-                        return;
-                    }
                 }
-                addMember(member);
             }
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        } catch (ExecutionException e) {
-            e.printStackTrace();
+            addMember(member);
         }
-
     }
 
     private void joinCluster(Member oneMemberOfCluster) {
-        Result result = cluster.ask(oneMemberOfCluster, new Request<RingMap>() {
-            @Override
-            public void run(RingMap service, OperationContext ctx) {
-                ctx.reply(service.getRing());
-            }
+        Result result = cluster.ask(oneMemberOfCluster, (service, ctx) -> {
+            ctx.reply(service.getRing());
         }).join();
+        ConcurrentHashMap<String, Integer>[] oldBuckets = map;
         if (result.isSucceeded()) {
-            ring = (ConsistentHashRing) result.getData();
-            changeRing(ring.addNode(localMember));
+            ConsistentHashRing remoteRing = (ConsistentHashRing) result.getData();
+            ConsistentHashRing newRing;
+            if (remoteRing.getMembers().contains(localMember)) {
+                ring = remoteRing.removeNode(localMember);
+                newRing = remoteRing;
+            } else {
+                ring = remoteRing;
+                newRing = remoteRing.addNode(localMember);
+            }
+            // we don't care about the old entries because the old ring doesn't have this local member so all operations will be remote.
+            // the old entries will be added to the cluster when the new ring is set.
+            changeRing(newRing).thenAccept(x -> {
+                        // maybe we can parallelize this operation in order to make it fast
+                        Arrays.stream(oldBuckets).forEach(map -> map.forEach(this::put));
+                        LOGGER.info("Joined a cluster which has {} members and {} buckets.", ring.getMembers().size(), ring.getBuckets().size());
+                    }
+            );
         }
     }
 
     private CompletableFuture<Void> changeRing(ConsistentHashRing newRing) {
+        System.out.println(ring.getBucketCount() + " -> " + newRing.getBucketCount());
         ConsistentHashRing oldRing = ring;
-        Map<ConsistentHashRing.TokenRange, List<Member>> oldBuckets = oldRing.getBuckets();
+        ConcurrentHashMap<String, Integer>[] newMap = createEmptyMap();
+        int[] newBucketIds = createBucketForRing(newRing);
 
         ArrayList<CompletableFuture> migrations = new ArrayList<>();
         newRing.getBuckets().forEach((range, members) -> {
+            int start = oldRing.findClosest(range.start);
+            int end = oldRing.findClosest(range.end - 1);
+
             if (members.contains(localMember)) {
-                List<Member> oldMembers = oldBuckets.get(range);
-                if (oldMembers == null) {
-                    int start = oldRing.findClosest(range.start);
-                    int end = oldRing.findClosest(range.end);
-                    int index = members.indexOf(localMember);
+                long cursor = range.start;
 
-                    for (int bucketId = start; bucketId < end; bucketId++) {
-                        ArrayList<Member> oldBucketMembers = oldRing.getBucket(bucketId).members;
-                        Member oldMember = oldBucketMembers.get(index % oldBucketMembers.size());
+                int bckLoopEnd = end - start < 0 ? end + oldRing.getBucketCount() : end;
+                for (int bucketId = start; bucketId <= bckLoopEnd; bucketId++) {
+                    bucketId %= oldRing.getBucketCount();
 
-                        final int finalBucketId = bucketId;
-                        CompletableFuture<Void> f = cluster.ask(oldMember, new Request<RingMap>() {
-                            int bucketId = finalBucketId;
+                    ConsistentHashRing.Bucket oldBucket = oldRing.getBucket(bucketId);
+                    List<Member> oldBucketMembers = oldBucket.members;
 
-                            @Override
-                            public void run(RingMap service, OperationContext ctx) {
-                                Map<String, Integer> moveEntries = new HashMap<>();
-                                Map<String, Integer> partition = service.getPartition(bucketId);
-                                ConsistentHashRing serviceRing = service.ring;
-                                Member actualMember = service.cluster.getCluster().getLocalMember();
+                    Member ownerMember;
+                    if (oldBucketMembers.contains(localMember)) {
+                        ownerMember = localMember;
+                    } else {
+                        int index = members.indexOf(localMember) % oldBucketMembers.size();
+                        ownerMember = oldBucketMembers.get(index);
+                    }
 
-                                partition.forEach((key, value) -> {
-                                    ArrayList<Member> newMembers = serviceRing.findBucket(key).members;
-                                    if (!newMembers.contains(localMember)) {
-                                        partition.remove(key);
-                                    }
-                                    if(newMembers.contains(actualMember)) {
-                                        moveEntries.put(key, value);
-                                    }
-                                });
-                                if (moveEntries.size() > 0) {
-                                    migrationListeners.forEach(l -> l.migrationStart(localMember));
-                                    ctx.reply(moveEntries);
+                    long queryStartToken = cursor;
+                    long nextBucketToken = oldRing.getBucket(bucketId + 1).token;
+                    long queryEndToken = (range.end - cursor > nextBucketToken - cursor) ? nextBucketToken : range.end;
+                    cursor = queryEndToken;
+
+                    System.out.println("asking entries [" + queryStartToken + " - " + queryEndToken + "] local " + ownerMember.equals(localMember));
+                    CompletableFuture<Void> f = cluster.ask(ownerMember, (service, ctx) -> {
+                        Map<String, Integer> moveEntries = new HashMap<>();
+
+                        ConsistentHashRing serviceRing = service.ring;
+                        int startBucket = serviceRing.findClosest(queryStartToken);
+                        int endBucket = serviceRing.findClosest(queryEndToken);
+
+                        int loopEnd = endBucket - startBucket < 0 ? endBucket + serviceRing.getBucketCount() : endBucket;
+
+                        for (int bckId = startBucket; bckId < loopEnd; bckId++) {
+                            bckId %= serviceRing.getBucketCount();
+                            Map<String, Integer> partition = service.getPartition(bckId);
+                            if (partition != null) {
+                                if (ring.getBucket(bckId + 1).token >= range.end) {
+                                    moveEntries.putAll(partition);
+                                } else {
+                                    partition.forEach((key, value) -> {
+                                        long hash = ring.hash(key);
+                                        if (hash >= range.start && hash < range.end) {
+                                            moveEntries.put(key, value);
+                                        }
+                                    });
                                 }
                             }
-                        }).thenAccept(result -> {
-                            if (result.isSucceeded()) {
-                                Map<String, Integer> data = (Map) result.getData();
-                                getPartition(finalBucketId).putAll(data);
+                        }
 
-                                LOGGER.info("Successfully completed migration. {} elements moved from {} to {}", data.size(), oldMember, localMember);
-                                migrationListeners.forEach(l -> l.migrationEnd(localMember));
-
-                            } else {
-                                // TODO: try again until we the member removed from the cluster
+                        service.dataWaitingForMigration.forEach((token, map) -> {
+                            if (range.end == token.end && range.start == token.start) {
+                                moveEntries.putAll(map);
+                                // remove
+                            } else if (range.end >= range.start && range.start <= token.end) {
+                                Iterator<Map.Entry<String, Integer>> iterator = map.entrySet().iterator();
+                                while (iterator.hasNext()) {
+                                    Map.Entry<String, Integer> next = iterator.next();
+                                    long entryToken = serviceRing.hash(next.getKey());
+                                    if (entryToken >= range.start && entryToken <= range.end) {
+                                        moveEntries.put(next.getKey(), next.getValue());
+                                        iterator.remove();
+                                    }
+                                }
                             }
                         });
 
-                        migrations.add(f);
+                        migrationListeners.forEach(l -> l.migrationStart(localMember));
+                        System.out.println("moving " + moveEntries.size() + " entries [" + queryStartToken + " - " + queryEndToken + "]");
+                        ctx.reply(moveEntries);
 
+                    }).thenAccept(result -> {
+                        if (result.isSucceeded()) {
+                            Map<String, Integer> data = (Map) result.getData();
+                            int startBucket = newRing.findClosest(range.start);
+                            int nextBucket = newRing.findClosest(range.end);
+                            if (startBucket == nextBucket) {
+                                newMap[startBucket].putAll(data);
+                            } else {
+                                data.forEach((key, value) -> {
+                                    int i = Arrays.binarySearch(newBucketIds, newRing.findBucketId(key));
+                                    if (i >= 0) {
+                                        Map<String, Integer> partition = newMap[i];
+                                        partition.put(key, value);
+                                    }
+                                });
+                            }
+
+                            if (!ownerMember.equals(localMember))
+                                LOGGER.info("{} elements in token[{} - {}] moved from {} to {}", data.size(), queryStartToken, queryEndToken, ownerMember, localMember);
+                        } else {
+                            // TODO: try again until we the member removed from the cluster
+                        }
+                    });
+                    migrations.add(f);
+                }
+
+
+            } else {
+                for (int bucketId = start; bucketId < end; bucketId++) {
+                    Map<String, Integer> partition = getPartition(bucketId);
+
+                    HashMap<String, Integer> migrate = new HashMap<>();
+                    for (Map.Entry<String, Integer> entry : partition.entrySet()) {
+                        long hash = ConsistentHashRing.hash(entry.getKey());
+                        if (!(hash < range.end && range.start <= hash)) {
+                            migrate.put(entry.getKey(), entry.getValue());
+                        }
                     }
 
-                } else if (!oldMembers.contains(localMember)) {
                     // we don't remove the old entries because
-                    // the new member will request the entries and remove them via migration request
+                    // the new member will request the entries and remove them via migration request,
+                    // so it allows us to avoid the requirement for consensus between nodes when changing ring.
+                    dataWaitingForMigration.put(range, migrate);
                 }
             }
 
         });
 
-        // combine all migrations
+        // resume when all migrations completed
         return CompletableFuture.allOf(migrations.toArray(new CompletableFuture[migrations.size()]))
-                .thenAccept(x -> {
-                    LOGGER.debug("completed {} migrations. new ring has {} buckets in member {}",
+                .thenRun(() -> {
+                    LOGGER.debug("{} migration completed.  New ring has {} buckets in member {}",
                             migrations.size(), newRing.getBuckets().size(), localMember);
-//                    setRing(newRing);
+                    migrationListeners.forEach(l -> l.migrationEnd(localMember));
+                    bucketIds = newBucketIds;
+                    map = newMap;
+                    ring = newRing;
+                    printMapSize();
                 });
     }
 
@@ -196,12 +283,8 @@ public class RingMap implements MembershipListener, Service {
     }
 
     Map<String, Integer> getPartition(int bucketId) {
-        try {
-            return map[Arrays.binarySearch(bucketIds, bucketId)];
-        } catch (Exception e) {
-            e.printStackTrace();
-            return null;
-        }
+        int i = Arrays.binarySearch(bucketIds, bucketId);
+        return i >= 0 ? map[i] : null;
     }
 
     @Override
@@ -215,13 +298,8 @@ public class RingMap implements MembershipListener, Service {
     }
 
     @Override
-    public void onStart() {
-    }
-
-    @Override
     public void onClose() {
         Arrays.stream(map).forEach(x -> x.clear());
-        paused = true;
     }
 
     public List<CompletableFuture<Void>> putAll(Map<String, Integer> fromMap) {
@@ -238,29 +316,21 @@ public class RingMap implements MembershipListener, Service {
 
         CompletableFuture<Void> f = new CompletableFuture<>();
 
-        ChannelFuture[] stages = new ChannelFuture[bucket.members.size()];
+        CompletableFuture<Result>[] stages = new CompletableFuture[bucket.members.size()];
         int idx = 0;
-        final int[] resultArr = {0};
-        boolean onlyLocal = true;
         for (Member next : bucket.members) {
             if (next.equals(localMember)) {
-                getPartition(bucketId).put(key, val);
+                putLocal(key, val);
             } else {
-                stages[idx] = cluster.send(next, new PutMapOperation(key, val)).addListener(x -> {
-                    resultArr[0]++;
-                    // Since we use eventual consistency, we only wait quorum of servers to perform the operation.
-                    if (resultArr[0] > stages.length / 2) {
-                        f.complete(null);
-                    }
-                });
-                onlyLocal = false;
+                stages[idx++] = cluster.ask(next, new PutMapOperation(key, val));
             }
         }
 
-        if (onlyLocal)
-            f.complete(null);
+        if (idx == 0)
+            return CompletableFuture.completedFuture(null);
 
-        return f;
+        // We should use eventual consistency here, that said we wait quorum of servers to perform the operation.
+        return CompletableFuture.allOf(stages);
     }
 
     public CompletableFuture<Result> get(String key) {
@@ -288,20 +358,11 @@ public class RingMap implements MembershipListener, Service {
         return Arrays.stream(map).collect(Collectors.summingInt(value -> value.size()));
     }
 
-
     public CompletableFuture<Map<Member, Integer>> size() {
-        Request<RingMap> bytes = new Request<RingMap>() {
-            @Override
-            public void run(RingMap service, OperationContext ctx) {
-                System.out.println("remote " + service.getLocalSize());
-
-                ctx.reply(service.getLocalSize());
-            }
-        };
+        Request<RingMap> bytes = (service, ctx) -> ctx.reply(service.getLocalSize());
         Map<Member, CompletableFuture<Result>> resultMap = cluster.askAllMembers(bytes);
 
         Map<Member, Integer> m = new ConcurrentHashMap<>(cluster.getCluster().getMembers().size());
-        System.out.println("local " + getLocalSize());
         m.put(localMember, getLocalSize());
         CompletableFuture<Map<Member, Integer>> future = new CompletableFuture<>();
 
@@ -345,20 +406,11 @@ public class RingMap implements MembershipListener, Service {
     }
 
     private void putLocal(String key, Integer value) {
-        getPartition(ring.findBucketId(key)).put(key, value);
-    }
-
-    public static class MigrationRequest implements Request<RingMap> {
-        int bucketId;
-
-        public MigrationRequest(int bucketId) {
-            this.bucketId = bucketId;
+        Map<String, Integer> partition = getPartition(ring.findBucketId(key));
+        if (partition == null) {
+            LOGGER.error("Discarded put request for key {} because node doesn't own that token.", key);
+        } else {
+            partition.put(key, value);
         }
-
-        @Override
-        public void run(RingMap service, OperationContext ctx) {
-            ctx.reply(service.getPartition(bucketId));
-        }
-
     }
 }

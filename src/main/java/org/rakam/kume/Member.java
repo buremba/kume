@@ -1,25 +1,15 @@
 package org.rakam.kume;
 
-import com.esotericsoftware.kryo.Kryo;
 import com.esotericsoftware.kryo.NotNull;
-import com.esotericsoftware.kryo.io.Input;
-import com.esotericsoftware.kryo.io.Output;
-import com.esotericsoftware.kryo.serializers.DefaultSerializers;
 import com.esotericsoftware.kryo.serializers.FieldSerializer;
-import org.rakam.kume.transport.serialization.InetSocketAddressSerializer;
+import org.rakam.kume.transport.serialization.serializers.InetSocketAddressSerializer;
 
 import java.net.InetSocketAddress;
-import java.util.UUID;
 
 /**
  * Created by buremba <Burak Emre Kabakcı> on 16/11/14 16:37.
  */
 public class Member {
-
-    @NotNull
-    @FieldSerializer.Bind(DefaultSerializers.StringSerializer.class)
-    String id;
-
     @NotNull
     @FieldSerializer.Bind(InetSocketAddressSerializer.class)
     InetSocketAddress address;
@@ -28,8 +18,13 @@ public class Member {
         return address;
     }
 
-    public String getId() {
-        return id;
+    public Member(InetSocketAddress address) {
+        this.address = address;
+    }
+
+    @Override
+    public String toString() {
+        return "Member{" + address + '}';
     }
 
     @Override
@@ -39,46 +34,17 @@ public class Member {
 
         Member member = (Member) o;
 
-        return id.equals(member.getId());
+        if (!address.equals(member.address)) return false;
+
+        return true;
     }
 
     @Override
     public int hashCode() {
-        return id.hashCode();
-    }
-
-    public Member(InetSocketAddress address) {
-        this.address = address;
-        id = UUID.randomUUID().toString();
-    }
-
-    public Member(InetSocketAddress address, String id) {
-        this.address = address;
-        this.id = id;
+        return address.hashCode();
     }
 
     public Member(String host, int port) {
         address = new InetSocketAddress(host, port);
-        id = UUID.randomUUID().toString();
-    }
-
-//    @Override
-    public void write(Kryo kryo, Output output) {
-        output.writeString(id);
-        kryo.writeObject(output, address);
-    }
-
-//    @Override
-    public void read(Kryo kryo, Input input) {
-        this.id = input.readString();
-        this.address = kryo.readObject(input, InetSocketAddress.class);
-    }
-
-    @Override
-    public String toString() {
-        return "Member{" +
-                "id='" + id + '\'' +
-                ", address=" + address +
-                '}';
     }
 }

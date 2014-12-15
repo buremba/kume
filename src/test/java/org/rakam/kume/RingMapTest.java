@@ -1,9 +1,5 @@
 package org.rakam.kume;
 
-import com.hazelcast.config.Config;
-import com.hazelcast.core.Hazelcast;
-import com.hazelcast.core.HazelcastInstance;
-import com.hazelcast.core.IMap;
 import org.junit.Test;
 import org.rakam.kume.service.ringmap.RingMap;
 
@@ -21,16 +17,17 @@ import static org.junit.Assert.assertTrue;
 public class RingMapTest extends KumeTest {
 
     @Test
-    public void test() {
-        HazelcastInstance hz = Hazelcast.newHazelcastInstance(new Config());
-        HazelcastInstance hz1 = Hazelcast.newHazelcastInstance(new Config());
+    public void testMa2p() throws InterruptedException, TimeoutException, ExecutionException {
+        ServiceInitializer services = new ServiceInitializer()
+                .add(bus -> new RingMap(bus, 2));
 
-        long l = System.currentTimeMillis();
-        IMap<String, Integer> test = hz.getMap("test");
-        for (int i = 0; i < 100000; i++) {
-            test.put("test"+i, 3);
+        Cluster cluster0 = new ClusterBuilder().services(services).start();
+
+        RingMap ringMap0 = cluster0.getService(RingMap.class);
+
+        for (int i = 0; i < 1000; i++) {
+            ringMap0.put("test"+System.currentTimeMillis()+i, i).get();
         }
-        System.out.println(System.currentTimeMillis() - l);
     }
 
     @Test

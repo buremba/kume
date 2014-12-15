@@ -28,7 +28,7 @@ public class RaftMasterElection implements Service {
 
         Map<String, Boolean> map = new ConcurrentHashMap<>();
         CompletableFuture<Boolean> future = new CompletableFuture<>();
-        Map<Member, CompletionStage<Result>> m = bus.sendAllMembers((service, ctx) -> ctx.reply(true));
+        Map<Member, CompletionStage<Result>> m = bus.askAllMembers((service, ctx) -> ctx.reply(true));
         m.forEach((member, resultFuture) -> {
             resultFuture.thenAccept(result -> {
                 System.out.println(result.getData());
@@ -53,16 +53,6 @@ public class RaftMasterElection implements Service {
 
     @Override
     public void handle(OperationContext ctx, Object request) {
-
-    }
-
-    @Override
-    public void onStart() {
-
-    }
-
-    @Override
-    public void onClose() {
 
     }
 }

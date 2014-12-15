@@ -1,4 +1,4 @@
-package org.rakam.kume.transport.serialization;
+package org.rakam.kume.transport.serialization.serializers;
 
 import com.esotericsoftware.kryo.Kryo;
 import com.esotericsoftware.kryo.Serializer;

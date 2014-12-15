@@ -6,7 +6,7 @@ import com.esotericsoftware.kryo.io.Input;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.ByteToMessageDecoder;
-import org.rakam.kume.service.ringmap.RingMap;
+import org.rakam.kume.transport.serialization.KryoFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -17,8 +17,7 @@ public class PacketDecoder extends ByteToMessageDecoder {
     final static Logger LOGGER = LoggerFactory.getLogger(PacketDecoder.class);
 
     public PacketDecoder() {
-        this.kryo = new Kryo();
-        this.kryo.register(RingMap.PutMapOperation.class);
+        this.kryo = KryoFactory.getKryoInstance();
     }
 
     @Override
