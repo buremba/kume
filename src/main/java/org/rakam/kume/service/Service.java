@@ -2,12 +2,18 @@ package org.rakam.kume.service;
 
 import org.rakam.kume.OperationContext;
 import org.rakam.kume.Request;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Created by buremba <Burak Emre Kabakcı> on 17/11/14 19:04.
  */
 public interface Service {
-    void handle(OperationContext ctx, Object request);
+    final static Logger LOGGER = LoggerFactory.getLogger(Service.class);
+
+    default void handle(OperationContext ctx, Object request) {
+        LOGGER.warn("Discarded message {} because the service doesn't implement handle(OperationContext, request)", request);
+    }
 
     default void handle(OperationContext ctx, Request request) {
         request.run(this, ctx);

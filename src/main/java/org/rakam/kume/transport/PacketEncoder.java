@@ -24,6 +24,8 @@ public class PacketEncoder extends MessageToByteEncoder<Packet> {
     protected void encode(ChannelHandlerContext ctx, Packet msg, ByteBuf out) throws Exception {
         // TODO: maybe we can use one big output in order to avoid GC garbage
         try {
+            LOGGER.trace("Encoding Packet{sequence={}, service={}}", msg.sequence, msg.service);
+
             Output output = new Output(2<<8, 2<<20);
             kryo.writeClassAndObject(output, msg.data);
 

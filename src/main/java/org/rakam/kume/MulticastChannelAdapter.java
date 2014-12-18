@@ -24,9 +24,9 @@ public class MulticastChannelAdapter extends ChannelInboundHandlerAdapter {
     }
 
     @Override
-    public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
-        ByteBuf content = ((DatagramPacket) msg).content();
+    public void channelRead(ChannelHandlerContext ctx, Object msg) {
         try {
+            ByteBuf content = ((DatagramPacket) msg).content();
             Object o;
             try {
                 o = cluster.getSerializer().toObject(content, content.readShort());
@@ -50,7 +50,7 @@ public class MulticastChannelAdapter extends ChannelInboundHandlerAdapter {
             }
         } catch (Exception e) {
             LOGGER.error("an error occurred while processing data in multicast server", e);
-        }finally {
+        } finally {
             ReferenceCountUtil.release(msg);
         }
     }
@@ -60,6 +60,8 @@ public class MulticastChannelAdapter extends ChannelInboundHandlerAdapter {
         if(cause instanceof ConnectException) {
             /* most likely the server is down but we don't do anything here
             since the heartbeat mechanism automatically removes the member from the cluster */
+        } else {
+            super.exceptionCaught(ctx, cause);
         }
     }
 }

@@ -28,6 +28,7 @@ public class PacketDecoder extends ByteToMessageDecoder {
 
             int packetNum = buffer.readInt();
             short serviceId = buffer.readShort();
+            LOGGER.trace("Decoding Packet{sequence={}, service={}}", packetNum, serviceId);
 
             byte[] data = new byte[buffer.readableBytes()];
             buffer.readBytes(data);
@@ -42,7 +43,8 @@ public class PacketDecoder extends ByteToMessageDecoder {
                 return;
             }
 
-            out.add(new Packet(packetNum, o, serviceId));
+            Packet e = new Packet(packetNum, o, serviceId);
+            out.add(e);
         } catch (Exception e) {
             LOGGER.error("error while handling package", e);
         }

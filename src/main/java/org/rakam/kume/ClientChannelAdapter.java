@@ -26,10 +26,11 @@ public class ClientChannelAdapter extends ChannelInboundHandlerAdapter {
     public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
         Packet read = (Packet) msg;
         CompletableFuture<Result> ifPresent = messageHandlers.remove(read.sequence);
-//        LOGGER.debug("got response for {}: {}", read.sequence, read.data);
-        if (ifPresent != null)
+        if (ifPresent != null) {
+            LOGGER.trace("Executing callback of package {}", read);
             ifPresent.complete(new Result(read.getData()));
-        else
+        } else {
             LOGGER.warn("unhandled packet {}", msg);
+        }
     }
 }

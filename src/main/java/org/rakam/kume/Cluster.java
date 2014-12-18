@@ -63,15 +63,16 @@ public class Cluster implements Service, ClusterMBean {
     final EventLoopGroup workerGroup = new NioEventLoopGroup();
 
     final private List<Service> services;
+
     final private AtomicInteger messageSequence = new AtomicInteger();
 
     final private ConcurrentHashMap<Member, Channel> clusterConnection = new ConcurrentHashMap<>();
 
     final Cache<Integer, CompletableFuture<Result>> messageHandlers = CacheBuilder.newBuilder()
-            .expireAfterWrite(5, TimeUnit.SECONDS).removalListener(new RemovalListener<Integer, CompletableFuture<Result>>() {
+            .expireAfterWrite(105, TimeUnit.SECONDS).removalListener(new RemovalListener<Integer, CompletableFuture<Result>>() {
                 @Override
                 public void onRemoval(RemovalNotification<Integer, CompletableFuture<Result>> notification) {
-                    if(!notification.getCause().equals(RemovalCause.EXPLICIT))
+                    if (!notification.getCause().equals(RemovalCause.EXPLICIT))
                         notification.getValue().complete(Result.FAILED);
                 }
             }).build();
@@ -92,28 +93,28 @@ public class Cluster implements Service, ClusterMBean {
         for (Member member : cluster) {
             // lazily create clients for fast startup
             clusterConnection.put(member, null);
-        };
+        }
+        ;
         clusterStartTime = System.currentTimeMillis();
-
-        CompletableFuture<Void> startFuture = new CompletableFuture<>();
 
         ChannelFuture bind = new ServerBootstrap()
                 .childOption(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
                 .group(bossGroup, workerGroup)
                 .channel(NioServerSocketChannel.class)
+                .option(ChannelOption.AUTO_READ, false)
                 .option(ChannelOption.SO_BACKLOG, 100)
                 .childHandler(new ChannelInitializer<SocketChannel>() {
 
-            @Override
-            public void initChannel(SocketChannel ch) throws Exception {
-                ChannelPipeline p = ch.pipeline();
-                p.addLast("frameDecoder", new LengthFieldBasedFrameDecoder(1048576, 0, 4, 0, 4));
-                p.addLast("packetDecoder", new PacketDecoder());
-                p.addLast("frameEncoder", new LengthFieldPrepender(4));
-                p.addLast("packetEncoder", new PacketEncoder());
-                startFuture.thenAccept(x -> p.addLast("server", new ServerChannelAdapter(Cluster.this)));
-            }
-        }).bind(serverAddress);
+                    @Override
+                    public void initChannel(SocketChannel ch) throws Exception {
+                        ChannelPipeline p = ch.pipeline();
+                        p.addLast("frameDecoder", new LengthFieldBasedFrameDecoder(1048576, 0, 4, 0, 4));
+                        p.addLast("packetDecoder", new PacketDecoder());
+                        p.addLast("frameEncoder", new LengthFieldPrepender(4));
+                        p.addLast("packetEncoder", new PacketEncoder());
+                        p.addLast(new ServerChannelAdapter(Cluster.this));
+                    }
+                }).bind(serverAddress);
 
         server = bind.sync()
                 .addListener(future -> {
@@ -126,7 +127,6 @@ public class Cluster implements Service, ClusterMBean {
             public void run() {
                 try {
                     server.closeFuture().sync();
-                    System.out.println("wtf");
                 } catch (InterruptedException e) {
                     e.printStackTrace();
                 }
@@ -144,13 +144,14 @@ public class Cluster implements Service, ClusterMBean {
         Bootstrap a = new Bootstrap()
                 .group(group)
                 .channelFactory(() -> new NioDatagramChannel(InternetProtocolFamily.IPv4))
-                .localAddress(multicastAddress.getHostName(), multicastAddress.getPort())
-                .option(ChannelOption.IP_MULTICAST_IF, NetUtil.LOOPBACK_IF)
+                .localAddress(multicastAddress)
                 .option(ChannelOption.SO_REUSEADDR, true)
+                .option(ChannelOption.IP_MULTICAST_IF, NetUtil.LOOPBACK_IF)
+                .option(ChannelOption.AUTO_READ, false)
                 .handler(new ChannelInitializer<NioDatagramChannel>() {
                     @Override
                     public void initChannel(NioDatagramChannel ch) throws Exception {
-                        startFuture.thenAccept(x -> ch.pipeline().addLast(new MulticastChannelAdapter(Cluster.this)));
+                        ch.pipeline().addLast(new MulticastChannelAdapter(Cluster.this));
                     }
                 });
 
@@ -176,8 +177,9 @@ public class Cluster implements Service, ClusterMBean {
                 .mapToObj(idx -> serviceGenerators.get(idx).constructor.newInstance(new ServiceContext((short) idx)))
                 .collect(Collectors.toList());
 
-        startFuture.complete(null);
         LOGGER.info("{} started listening on {}, listening UDP multicast server {}", localMember, server.localAddress(), multicastAddress);
+        server.config().setAutoRead(true);
+        multicastServer.config().setAutoRead(true);
     }
 
     public Cluster(Collection<Member> cluster, ServiceInitializer serviceGenerators) throws InterruptedException {
@@ -192,6 +194,7 @@ public class Cluster implements Service, ClusterMBean {
             try {
                 channel = connectServer(member.getAddress());
             } catch (InterruptedException e) {
+                LOGGER.error("Couldn't connect new server", e);
                 return;
             }
             clusterConnection.put(member, channel);
@@ -199,6 +202,7 @@ public class Cluster implements Service, ClusterMBean {
             membershipListeners.forEach(x -> Throwables.propagate(() -> x.memberAdded(member)));
         }
     }
+
     public void removeMember(Member member) {
         clusterConnection.remove(member);
         LOGGER.info("Member removed {}", member);
@@ -263,7 +267,7 @@ public class Cluster implements Service, ClusterMBean {
 
     public void sendAllMembersInternal(Object bytes, short service) {
         clusterConnection.forEach((member, conn) -> {
-            if(!member.equals(localMember)) {
+            if (!member.equals(localMember)) {
                 LOGGER.debug("member {} ", member);
                 sendInternal(conn, bytes, service);
             }
@@ -273,7 +277,7 @@ public class Cluster implements Service, ClusterMBean {
     public Map<Member, CompletableFuture<Result>> askAllMembersInternal(Object bytes, short service) {
         Map<Member, CompletableFuture<Result>> map = new ConcurrentHashMap<>();
         clusterConnection.forEach((member, conn) -> {
-            if(!member.equals(localMember)) {
+            if (!member.equals(localMember)) {
                 LOGGER.debug("member {} ", member);
                 map.put(member, askInternal(conn, bytes, service));
             }
@@ -341,21 +345,20 @@ public class Cluster implements Service, ClusterMBean {
         return serializer;
     }
 
-    public static class HeartbeatOperation extends InternalRequest{
+    public static class HeartbeatOperation extends InternalRequest {
         public HeartbeatOperation(Member me) {
             sender = me;
         }
 
         @Override
         public void run(Cluster cluster, OperationContext ctx) {
-            if(cluster.heartbeatMap.containsKey(sender)) {
+            if (cluster.heartbeatMap.containsKey(sender)) {
                 cluster.heartbeatMap.put(sender, System.currentTimeMillis());
             } else {
                 cluster.addMember(sender);
             }
         }
     }
-
 
     public static class AddMemberRequest extends InternalRequest {
         Member member;
@@ -402,16 +405,6 @@ public class Cluster implements Service, ClusterMBean {
         }
     }
 
-
-    public static abstract class InternalOperation implements Operation {
-        public Member sender;
-
-        @Override
-        public int getService() {
-            return -1;
-        }
-    }
-
     public static abstract class InternalRequest implements Request<Cluster> {
         public Member sender;
     }
@@ -424,11 +417,6 @@ public class Cluster implements Service, ClusterMBean {
         server.config().setAutoRead(true);
     }
 
-    @Override
-    public void handle(OperationContext ctx, Object request) {
-
-    }
-
     public class ServiceContext<T extends Service> {
         short service;
 
@@ -437,11 +425,11 @@ public class Cluster implements Service, ClusterMBean {
         }
 
         public void send(Member server, Object bytes) {
-            if(server.equals(localMember)) {
-                LocalOperationContext ctx1 = new LocalOperationContext(null);
+            if (server.equals(localMember)) {
+                LocalOperationContext ctx1 = new LocalOperationContext(null, localMember);
                 // move to an executor handler
                 services.get(service).handle(ctx1, bytes);
-            }else {
+            } else {
                 sendInternal(getConnection(server), bytes, service);
             }
         }
@@ -459,24 +447,24 @@ public class Cluster implements Service, ClusterMBean {
         }
 
         public CompletableFuture<Result> ask(Member server, Object bytes) {
-            if(server.equals(localMember)) {
+            if (server.equals(localMember)) {
                 CompletableFuture<Result> future = new CompletableFuture<>();
-                LocalOperationContext ctx1 = new LocalOperationContext(future);
+                LocalOperationContext ctx1 = new LocalOperationContext(future, localMember);
                 // move to an executor handler
                 services.get(service).handle(ctx1, bytes);
                 return future;
-            }else {
+            } else {
                 return askInternal(getConnection(server), bytes, service);
             }
         }
 
         public CompletableFuture<Result> ask(Member server, Request<T> request) {
-            if(server.equals(localMember)) {
+            if (server.equals(localMember)) {
                 CompletableFuture<Result> future = new CompletableFuture<>();
-                LocalOperationContext ctx1 = new LocalOperationContext(future);
+                LocalOperationContext ctx1 = new LocalOperationContext(future, localMember);
                 request.run((T) services.get(service), ctx1);
                 return future;
-            }else {
+            } else {
                 return askInternal(getConnection(server), request, service);
             }
         }

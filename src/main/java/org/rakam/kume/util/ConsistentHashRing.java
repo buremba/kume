@@ -30,6 +30,13 @@ public class ConsistentHashRing {
     private static final HashFunction hashFunction = Hashing.murmur3_128();
     private final int replicationFactor;
 
+
+    public static boolean isTokenBetween(long hash, long start, long end) {
+        if(start <= end) return hash >= start && hash <= end;
+        // we're in the start point of ring
+        else return hash > start || hash < end;
+    }
+
     public ConsistentHashRing(Collection<Member> members, int bucketPerNode, int replicationFactor) {
         this.bucketPerNode = bucketPerNode;
         this.replicationFactor = replicationFactor;
@@ -95,7 +102,7 @@ public class ConsistentHashRing {
         return new TokenRange(i, buckets[i].token, getBucketFromRing(buckets, i + 1).token);
     }
 
-    public int findClosest(long l) {
+    public int findBucketFromToken(long l) {
         int low = 0;
         int high = buckets.length - 1;
 
@@ -127,7 +134,7 @@ public class ConsistentHashRing {
             Bucket current = buckets[i];
             if (current.members.contains(member)) {
                 if (i == buckets.length - 1) {
-                    total += (((Long.MAX_VALUE - current.token) + (buckets[0].token - Long.MIN_VALUE))/2)  / (Long.MAX_VALUE / 100.0);
+                    total += (((Long.MAX_VALUE - current.token) + (buckets[0].token - Long.MIN_VALUE)) / 2) / (Long.MAX_VALUE / 100.0);
                 } else {
                     total += Math.abs((buckets[i + 1].token - current.token) / 2) / (Long.MAX_VALUE / 100.0);
                 }
@@ -155,8 +162,8 @@ public class ConsistentHashRing {
         getBuckets(buckets)
                 .entrySet().stream()
                 .filter(x -> !x.getValue().contains(member))
-                .forEach(x -> x.getValue().forEach(z -> result.merge(z, x.getKey().gap()/2, Long::sum)));
-        Set<Map.Entry<Member, Long>> resultSet = result.entrySet();
+                .forEach(x -> x.getValue().forEach(z -> result.merge(z, x.getKey().gap() / 2, Long::sum)));
+        Set<Map.Entry<Member, Long>> memberSet = result.entrySet();
 
         // find the larger gaps to and divide them in order to create new buckets
         TokenRange[] tokens = getBuckets(buckets).entrySet().stream()
@@ -184,11 +191,11 @@ public class ConsistentHashRing {
             HashSet<Member> members = new HashSet<>();
             members.add(member);
 
-            IntStream.range(0, replicationFactor-1).forEach(i -> {
-                Map.Entry<Member, Long> m = resultSet.stream().sorted((x, y) -> x.getValue()
-                        .compareTo(y.getValue())).findFirst().get();
+            IntStream.range(0, replicationFactor - 1).forEach(i -> {
+                Map.Entry<Member, Long> m = memberSet.stream()
+                        .sorted((x, y) -> Long.compare(x.getValue(), y.getValue())).findFirst().get();
                 members.add(m.getKey());
-                m.setValue(m.getValue()+gap);
+                m.setValue(m.getValue() + gap);
             });
 
             Bucket element = new Bucket(members, current.start + gap);
@@ -231,15 +238,21 @@ public class ConsistentHashRing {
         // remove smallest buckets which is replicated by member
         getBuckets().entrySet().stream()
                 .filter(x -> x.getValue().contains(member))
-                .sorted((x, y) -> x.getKey().gap() > y.getKey().gap() ? 1 : -1)
-                .limit(bucketPerNode).map(x -> x.getKey().id)
-                .sorted((x, y) -> x.compareTo(y)) // we need reverse order, otherwise the indexes change
-                .forEach(i -> result.remove(i));
+                .sorted((x, y) -> Long.compare(x.getKey().gap(), y.getKey().gap()))
+                .limit(bucketPerNode)
+                .map(x -> x.getKey().id)
+                .sorted((x, y) -> Integer.compare(y, x)) // we need reverse order, otherwise the indexes change
+                .forEach(i -> {
+                    // cause IntStream doesn't have a method sorted(Comparator)
+                    // and you know, it sucks.
+                    result.remove((int) i);
+                });
 
         // replace this member to another in other buckets which is replicated by this member
         Stream<Bucket> resultArr = result.stream()
-                .filter(x -> x.members.contains(member))
                 .map(bucket -> {
+                    if(!bucket.members.contains(member))
+                        return bucket;
                     HashSet arrayList = new HashSet(bucket.members);
                     arrayList.remove(member);
                     if (newMemberSize >= replicationFactor) {
@@ -248,18 +261,19 @@ public class ConsistentHashRing {
                                 members.forEach(m -> memberTokenRange.merge(m, val.gap(), Long::sum)));
                         Optional<Map.Entry<Member, Long>> first = memberTokenRange.entrySet().stream()
                                 .filter(x -> !x.getKey().equals(member))
-                                .sorted((o1, o2) -> o1.getValue().longValue() > o2.getValue().longValue() ? 1 : -1)
+                                .sorted((o1, o2) -> Long.compare(o1.getValue(), o2.getValue()))
                                 .findFirst();
                         first.ifPresent(entry -> arrayList.add(entry.getKey()));
                     }
                     return new Bucket(arrayList, bucket.token);
                 });
 
-        return new ConsistentHashRing(resultArr.toArray(Bucket[]::new), bucketPerNode, replicationFactor);
+        Bucket[] buckets1 = resultArr.toArray(Bucket[]::new);
+        return new ConsistentHashRing(buckets1, bucketPerNode, replicationFactor);
     }
 
     public int findBucketId(String key) {
-        return findClosest(hash(key));
+        return findBucketFromToken(hash(key));
     }
 
     public Set<Member> getMembers() {
@@ -297,7 +311,7 @@ public class ConsistentHashRing {
     public static class Bucket {
         public long token;
 
-//        @CollectionSerializer.BindCollection(
+        //        @CollectionSerializer.BindCollection(
 //                elementSerializer = UnmodifiableCollectionsSerializer.class,
 //                elementClass = Member.class,
 //                elementsCanBeNull = false)
@@ -329,7 +343,7 @@ public class ConsistentHashRing {
         }
     }
 
-    public class TokenRange {
+    public static class TokenRange {
         public final long start;
         public final long end;
         public final int id;

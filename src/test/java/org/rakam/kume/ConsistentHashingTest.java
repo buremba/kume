@@ -2,6 +2,7 @@ package org.rakam.kume;
 
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
+import org.junit.Ignore;
 import org.junit.Test;
 import org.rakam.kume.util.ConsistentHashRing;
 
@@ -33,14 +34,54 @@ public class ConsistentHashingTest {
 
 
         List<Member> members = Lists.newArrayList(member);
-        testRingMembers(ring.getBuckets(), members, 8, 2);
+
+        for (int i = 1; i <= 100; i++) {
+            Map<ConsistentHashRing.TokenRange, List<Member>> buckets = ring.getBuckets();
+
+            assertEquals(buckets.size(), 8 * members.size());
+            buckets.forEach((token, memberList) -> {
+                if (members.size() <= 2) {
+                    assertEquals(members.size(), memberList.size());
+                    for (Member m : members) {
+                        assertTrue(memberList.contains(m));
+                    }
+                } else {
+                    assertEquals(memberList.size(), 2);
+                    assertEquals(new HashSet<>(memberList).size(), 2);
+                }
+            });
+
+            Member member1 = new Member("127.0.0.1", i);
+            ring = ring.addNode(member1);
+            members.add(member1);
+        }
+
+//        final ConsistentHashRing finalRing = ring;
+//        ring.getMembers().forEach(y -> {
+//            long count = finalRing.getBuckets().entrySet().stream().filter(x -> x.getValue().contains(y)).count();
+//            System.out.println(count + " " + y);
+//        });
+    }
+
+    @Ignore
+    @Test
+    public void testMemberContainsFixedBuckets() {
+
+        Member member = new Member("127.0.0.1", 0);
+        ConsistentHashRing ring = new ConsistentHashRing(Lists.newArrayList(member), 8, 2);
+        List<Member> members = Lists.newArrayList(member);
 
         for (int i = 1; i < 100; i++) {
+            Map<ConsistentHashRing.TokenRange, List<Member>> buckets = ring.getBuckets();
+            ring.getMembers().forEach(m -> {
+                long count = buckets.entrySet().stream().filter(x -> x.getValue().contains(m)).count();
+                assertEquals(Math.min(8 * 2, buckets.size()), count);
+            });
+
             Member member1 = new Member("127.0.0.1", i);
             ring = ring.addNode(member1);
             members.add(member1);
 
-            testRingMembers(ring.getBuckets(), members, 8, 2);
         }
     }
 
@@ -53,9 +94,33 @@ public class ConsistentHashingTest {
 
 
         ConsistentHashRing removedRing = ring.removeNode(member0);
-        removedRing.getBuckets().forEach((range, members) -> {
+        Map<ConsistentHashRing.TokenRange, List<Member>> buckets = removedRing.getBuckets();
+
+        assertEquals(buckets.size(), 8);
+        buckets.forEach((range, members) -> {
             assertEquals(members.size(), 1);
             assertTrue(members.contains(member1));
+        });
+
+    }
+
+    @Test
+    public void testRemoveMultiple() {
+
+        Member member0 = new Member("127.0.0.1", 0);
+        Member member1 = new Member("127.0.0.1", 1);
+        Member member2 = new Member("127.0.0.1", 2);
+        ConsistentHashRing ring = new ConsistentHashRing(Lists.newArrayList(member0, member1, member2), 8, 2);
+
+
+        ConsistentHashRing removedRing = ring.removeNode(member2);
+        Map<ConsistentHashRing.TokenRange, List<Member>> buckets = removedRing.getBuckets();
+
+        assertEquals(buckets.size(), 16);
+        buckets.forEach((range, members) -> {
+            assertEquals(members.size(), 2);
+            assertTrue(members.contains(member1));
+            assertTrue(members.contains(member0));
         });
 
     }
@@ -88,20 +153,6 @@ public class ConsistentHashingTest {
     }
 
 
-    private void testRingMembers(Map<ConsistentHashRing.TokenRange, List<Member>> buckets, List<Member> members, int bucketPerNode, int replicationFactor) {
-        assertEquals(buckets.size(), bucketPerNode * members.size());
-        buckets.forEach((token, memberList) -> {
-            if (members.size() <= replicationFactor) {
-                assertEquals(members.size(), memberList.size());
-                for (Member member : members) {
-                    assertTrue(memberList.contains(member));
-                }
-            } else {
-                assertEquals(memberList.size(), replicationFactor);
-                assertEquals(new HashSet<>(memberList).size(), 2);
-            }
-        });
-    }
 
     @Test()
     public void testEquals() {

@@ -7,9 +7,11 @@ import java.util.concurrent.CompletableFuture;
  */
 public class LocalOperationContext implements OperationContext {
     private final CompletableFuture<Result> callback;
+    private final Member member;
 
-    public LocalOperationContext(CompletableFuture<Result> callback) {
+    public LocalOperationContext(CompletableFuture<Result> callback, Member localMember) {
         this.callback = callback;
+        this.member = localMember;
     }
 
     @Override
@@ -19,6 +21,6 @@ public class LocalOperationContext implements OperationContext {
 
     @Override
     public Member getSender() {
-        return null;
+        return member;
     }
 }

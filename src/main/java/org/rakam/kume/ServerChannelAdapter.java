@@ -24,12 +24,12 @@ public class ServerChannelAdapter extends ChannelInboundHandlerAdapter {
     }
 
     @Override
-    public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
-//        LOGGER.debug("server {} got message {}", ctx.channel().localAddress(), msg);
+    public void channelRead(ChannelHandlerContext ctx, Object msg) {
+        LOGGER.trace("server {} got message {}", ctx.channel().localAddress(), msg);
 
         Packet read = (Packet) msg;
         Object o = read.getData();
-        RemoteOperationContext ctx1 = new RemoteOperationContext(ctx, read.service, read.sequence, null);
+        RemoteOperationContext ctx1 = new RemoteOperationContext(ctx, read.service, read.sequence, eventBus);
         Service service = services.get(read.service);
 
         if (o instanceof Request) {
