@@ -8,6 +8,7 @@ import org.rakam.kume.service.Service;
 import org.rakam.kume.service.ringmap.RingMap;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
 import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
@@ -22,7 +23,8 @@ import static org.junit.Assert.assertTrue;
 public class RingMapTest extends KumeTest {
 
     @Test
-    public void testMa2p() throws InterruptedException, TimeoutException, ExecutionException {
+    public void testMa2p() throws InterruptedException, TimeoutException, ExecutionException, IOException {
+
         Logger root = (Logger) LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME);
         root.setLevel(Level.DEBUG);
 

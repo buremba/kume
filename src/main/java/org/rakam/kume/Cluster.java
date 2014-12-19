@@ -31,6 +31,7 @@ import org.rakam.kume.transport.Packet;
 import org.rakam.kume.transport.PacketDecoder;
 import org.rakam.kume.transport.PacketEncoder;
 import org.rakam.kume.transport.serialization.Serializer;
+import org.rakam.kume.util.NetworkUtil;
 import org.rakam.kume.util.Throwables;
 import org.rakam.kume.util.Tuple;
 import org.slf4j.Logger;
@@ -137,17 +138,16 @@ public class Cluster implements Service {
         localMember = new Member((InetSocketAddress) server.localAddress());
         master = localMember;
 
-        multicastAddress = new InetSocketAddress("239.255.27.1", 14878);
+        multicastAddress = new InetSocketAddress("224.0.67.67", 5001);
 
         EventLoopGroup group = new NioEventLoopGroup();
-
 
         Bootstrap a = new Bootstrap()
                 .group(group)
                 .channelFactory(() -> new NioDatagramChannel(InternetProtocolFamily.IPv4))
                 .localAddress(multicastAddress)
                 .option(ChannelOption.SO_REUSEADDR, true)
-                .option(ChannelOption.IP_MULTICAST_IF, NetUtil.LOOPBACK_IF)
+                .option(ChannelOption.IP_MULTICAST_IF, NetworkUtil.getPublicInterface())
                 .option(ChannelOption.AUTO_READ, false)
                 .handler(new ChannelInitializer<NioDatagramChannel>() {
                     @Override
@@ -157,7 +157,7 @@ public class Cluster implements Service {
                 });
 
         multicastServer = (NioDatagramChannel) a.bind(multicastAddress.getPort()).sync().channel();
-        multicastServer.joinGroup(multicastAddress, NetUtil.LOOPBACK_IF).sync();
+        multicastServer.joinGroup(multicastAddress, NetworkUtil.getPublicInterface()).sync();
 
         ByteBuf heartbeatBuf = Unpooled.unreleasableBuffer(serializer.toByteBuf(new HeartbeatOperation(localMember)));
 
@@ -165,6 +165,7 @@ public class Cluster implements Service {
 
         heartbeatTask = workerGroup.scheduleAtFixedRate(() -> {
             long time = System.currentTimeMillis();
+
             heartbeatMap.forEach((member, lastResponse) -> {
                 if (time - lastResponse > 2000) {
 //                    removeMember(member);
@@ -181,7 +182,7 @@ public class Cluster implements Service {
                 .collect(Collectors.toCollection(() -> services));
 
         serviceNameMap = IntStream.range(0, serviceGenerators.size())
-                .mapToObj(idx -> new Tuple<>(serviceGenerators.get(idx).name, services.get(idx)))
+                .mapToObj(idx -> new Tuple<>(serviceGenerators.get(idx).name, services.get(idx+1)))
                 .collect(Collectors.toConcurrentMap(x -> x._1, x -> x._2));
 
         LOGGER.info("{} started listening on {}, listening UDP multicast server {}", localMember, server.localAddress(), multicastAddress);
