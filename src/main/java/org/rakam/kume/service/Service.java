@@ -21,4 +21,7 @@ public interface Service {
 
     default void onClose() {
     }
+
+    default void destroy() {
+    }
 }

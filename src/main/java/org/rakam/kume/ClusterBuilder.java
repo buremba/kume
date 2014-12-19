@@ -1,5 +1,7 @@
 package org.rakam.kume;
 
+import org.rakam.kume.util.NetworkUtil;
+
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -43,13 +45,12 @@ public class ClusterBuilder {
         if (members == null)
             members = new ArrayList<>();
 
-        if (services == null)
-            throw new IllegalArgumentException("services are not set");
+        if (serverAddress == null)
+            serverAddress = new InetSocketAddress(NetworkUtil.getDefaultAddress(), 0);
 
-        if (serverAddress != null)
-            return new Cluster(members, services, serverAddress);
-        else
-            return new Cluster(members, services);
+        if(services==null)
+            services = new ServiceInitializer();
 
+        return new Cluster(members, services, serverAddress);
     }
 }

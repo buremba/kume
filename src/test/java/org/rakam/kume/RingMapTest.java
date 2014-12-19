@@ -2,9 +2,10 @@ package org.rakam.kume;
 
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
+import io.netty.util.collection.IntObjectHashMap;
 import org.junit.Test;
+import org.rakam.kume.service.Service;
 import org.rakam.kume.service.ringmap.RingMap;
-import org.rakam.kume.util.ConsistentHashRing;
 import org.slf4j.LoggerFactory;
 
 import java.util.Optional;
@@ -26,39 +27,47 @@ public class RingMapTest extends KumeTest {
         root.setLevel(Level.DEBUG);
 
         ServiceInitializer services = new ServiceInitializer()
-                .add(bus -> new RingMap(bus, 2));
+                .add("map", bus -> new RingMap(bus, 2));
 
         Cluster cluster0 = new ClusterBuilder().services(services).start();
 
-        RingMap ringMap0 = cluster0.getService(RingMap.class);
+        IntObjectHashMap<Service> entries = new IntObjectHashMap<>();
+
+        RingMap ringMap0 = cluster0.getService("map");
+
+        RingMap service = cluster0.createService("tableName", bus -> new RingMap(bus, 2));
 
         for (int i = 0; i < 1000; i++) {
             ringMap0.put("test" + System.currentTimeMillis() + i, i).get();
         }
+    }
 
-        ConsistentHashRing ring = ringMap0.getRing();
-        int[] bucketIds = ringMap0.bucketIds;
-        for (int i = 0; i < ringMap0.map.length; i++) {
-            int bucketId = bucketIds[i];
-            ringMap0.map[i].forEach((key, value) -> {
-                int hash = ring.findBucketId(key);
-                assertEquals(hash, bucketId);
-            });
+    @Test
+    public void testMa24p() throws InterruptedException, TimeoutException, ExecutionException {
+        Logger root = (Logger) LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME);
+        root.setLevel(Level.DEBUG);
+
+        Cluster cluster0 = new ClusterBuilder().start();
+
+        RingMap ringMap0 = cluster0.createService("tableName", bus -> new RingMap(bus, 2));
+
+        for (int i = 0; i < 1000; i++) {
+            ringMap0.put("test" + System.currentTimeMillis() + i, i).get();
         }
     }
 
     @Test
     public void testMap() throws InterruptedException, TimeoutException, ExecutionException {
         ServiceInitializer services = new ServiceInitializer()
-                .add(bus -> new RingMap(bus, 2));
+                .add("map", bus -> new RingMap(bus, 2));
 
         Cluster cluster0 = new ClusterBuilder().services(services).start();
         Cluster cluster1 = new ClusterBuilder().services(services).start();
 
         waitForDiscovery(cluster0, 1);
 
-        RingMap ringMap0 = cluster0.getService(RingMap.class);
-        RingMap ringMap1 = cluster1.getService(RingMap.class);
+        RingMap ringMap0 = cluster0.getService("map");
+        RingMap ringMap1 = cluster1.getService("map");
 
         long l = System.currentTimeMillis();
         for (int i = 0; i < 100000; i++) {
@@ -76,11 +85,11 @@ public class RingMapTest extends KumeTest {
     @Test
     public void testMapNewNode() throws InterruptedException, TimeoutException, ExecutionException {
         ServiceInitializer services = new ServiceInitializer()
-                .add(bus -> new RingMap(bus, 2));
+                .add("map", bus -> new RingMap(bus, 2));
 
         Cluster cluster0 = new ClusterBuilder().services(services).start();
 
-        RingMap ringMap0 = cluster0.getService(RingMap.class);
+        RingMap ringMap0 = cluster0.getService("map");
 
         for (int i = 0; i < 1000; i++) {
             ringMap0.put("test" + i, 5).get();
@@ -88,7 +97,7 @@ public class RingMapTest extends KumeTest {
 
         Cluster cluster1 = new ClusterBuilder().services(services).start();
 
-        RingMap ringMap1 = cluster1.getService(RingMap.class);
+        RingMap ringMap1 = cluster1.getService("map");
         waitForMigrationEnd(ringMap1);
 
         Integer size = ringMap1.size().get().values().stream().reduce((x, y) -> x + y).get();
@@ -98,7 +107,7 @@ public class RingMapTest extends KumeTest {
     @Test
     public void testMapNodeFailure() throws InterruptedException, TimeoutException, ExecutionException {
         ServiceInitializer services = new ServiceInitializer()
-                .add(bus -> new RingMap(bus, 2));
+                .add("map", bus -> new RingMap(bus, 2));
 
         Cluster cluster0 = new ClusterBuilder().services(services).start();
         Cluster cluster1 = new ClusterBuilder().services(services).start();
@@ -108,7 +117,7 @@ public class RingMapTest extends KumeTest {
         waitForDiscovery(cluster1, 3);
         waitForDiscovery(cluster2, 3);
 
-        RingMap ringMap0 = cluster0.getService(RingMap.class);
+        RingMap ringMap0 = cluster0.getService("map");
 
         for (int i = 0; i < 1000; i++) {
             ringMap0.put("test" + i, 5).get();
@@ -143,15 +152,15 @@ public class RingMapTest extends KumeTest {
     @Test
     public void testMapMultipleThreads() throws InterruptedException, TimeoutException, ExecutionException {
         ServiceInitializer services = new ServiceInitializer()
-                .add(bus -> new RingMap(bus, 2));
+                .add("map", bus -> new RingMap(bus, 2));
 
         Cluster cluster0 = new ClusterBuilder().services(services).start();
         new ClusterBuilder().services(services).start();
 
         waitForDiscovery(cluster0, 1);
 
-        RingMap ringMap0 = cluster0.getService(RingMap.class);
-        RingMap ringMap1 = cluster0.getService(RingMap.class);
+        RingMap ringMap0 = cluster0.getService("map");
+        RingMap ringMap1 = cluster0.getService("map");
 
         CountDownLatch countDownLatch = new CountDownLatch(2);
 

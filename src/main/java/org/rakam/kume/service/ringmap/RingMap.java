@@ -31,10 +31,9 @@ import static org.rakam.kume.util.ConsistentHashRing.TokenRange;
 public class RingMap extends PausableService implements MembershipListener {
     final static Logger LOGGER = LoggerFactory.getLogger(RingMap.class);
 
-    public ConcurrentHashMap<String, Integer>[] map;
-    // it's size will always be numberOfBucketsPerNode * replicationFactor
-    public int[] bucketIds;
-    ConsistentHashRing ring;
+    ConcurrentHashMap<String, Integer>[] map;
+    private int[] bucketIds;
+    private ConsistentHashRing ring;
     Cluster.ServiceContext<RingMap> cluster;
 
     private final Member localMember;
@@ -272,12 +271,22 @@ public class RingMap extends PausableService implements MembershipListener {
         Arrays.stream(map).forEach(x -> x.clear());
     }
 
-    public List<CompletableFuture<Void>> putAll(Map<String, Integer> fromMap) {
-        // this is not the way it should be, we should group map entries and send batches to members.
-        List<CompletableFuture<Void>> objects =
-                fromMap.entrySet().stream().map(entry -> put(entry.getKey(), entry.getValue()))
-                        .collect(Collectors.<CompletableFuture<Void>>toList());
-        return objects;
+    public CompletableFuture<Void> putAll(Map<String, Integer> fromMap) {
+        Map<Member, List<Entry<String, Integer>>> m = new HashMap<>();
+
+        for (Entry<String, Integer> entry : fromMap.entrySet()) {
+            for (Member member : ring.findBucket(entry.getKey()).members) {
+                m.getOrDefault(member, new ArrayList()).add(entry);
+            }
+        }
+
+        for (Entry<Member, List<Entry<String, Integer>>> entry : m.entrySet()) {
+            cluster.send(entry.getKey(), new PutAllMapOperation(entry.getValue()));
+        }
+        CompletableFuture[] completableFutures = fromMap.entrySet().stream()
+                .map(entry -> put(entry.getKey(), entry.getValue()))
+                .toArray(CompletableFuture[]::new);
+        return CompletableFuture.allOf(completableFutures);
     }
 
     public CompletableFuture<Void> put(String key, Integer val) {
@@ -362,7 +371,7 @@ public class RingMap extends PausableService implements MembershipListener {
         }
     }
 
-    private void putLocal(String key, Integer value) {
+    void putLocal(String key, Integer value) {
         Map<String, Integer> partition = getPartition(ring.findBucketId(key));
         if (partition == null) {
             LOGGER.error("Discarded put request for key {} because node doesn't own that token.", key);
@@ -370,5 +379,4 @@ public class RingMap extends PausableService implements MembershipListener {
             partition.put(key, value);
         }
     }
-
 }

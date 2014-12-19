@@ -6,9 +6,9 @@ package org.rakam.kume.transport;
 public class Packet {
     public final int sequence;
     public Object data;
-    public short service;
+    public int service;
 
-    public Packet(int sequence, Object data, short service) {
+    public Packet(int sequence, Object data, int service) {
         this.sequence = sequence;
         this.data = data;
         this.service = service;

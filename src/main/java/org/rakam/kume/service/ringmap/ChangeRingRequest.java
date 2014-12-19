@@ -5,7 +5,6 @@ import org.rakam.kume.OperationContext;
 import org.rakam.kume.Request;
 import org.rakam.kume.util.ConsistentHashRing;
 
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
@@ -32,7 +31,7 @@ class ChangeRingRequest implements Request<RingMap> {
         synchronized (service.cluster) {
             Map<String, Integer> moveEntries = new HashMap<>();
 
-            ConsistentHashRing serviceRing = service.ring;
+            ConsistentHashRing serviceRing = service.getRing();
             int startBucket = serviceRing.findBucketFromToken(queryStartToken);
             int endBucket = serviceRing.findBucketFromToken(queryEndToken);
 
@@ -90,26 +89,26 @@ class ChangeRingRequest implements Request<RingMap> {
                 }
             }
 
-            if(moveEntries.size() == 0) {
-
-                boolean i1 = Arrays.binarySearch( service.bucketIds, startBucket) >= 0;
-                boolean i2 = Arrays.binarySearch( service.bucketIds, endBucket) >= 0;
-
-                if(!i1 && !i2) {
-                    System.out.println("new i don't have that range");
-                }
-
-                int closestSb = oldRing.findBucketFromToken(queryStartToken);
-                int closestEb = oldRing.findBucketFromToken(queryEndToken);
-                int[] bucketForRing = service.createBucketForRing(oldRing);
-
-                boolean i3 = Arrays.binarySearch(bucketForRing, closestSb) >= 0;
-                boolean i4 = Arrays.binarySearch(bucketForRing, closestEb) >= 0;
-
-                if(!i3 && !i4) {
-                    System.out.println("old i don't have that range");
-                }
-            }
+//            if(moveEntries.size() == 0) {
+//
+//                boolean i1 = Arrays.binarySearch( service.bucketIds, startBucket) >= 0;
+//                boolean i2 = Arrays.binarySearch( service.bucketIds, endBucket) >= 0;
+//
+//                if(!i1 && !i2) {
+//                    System.out.println("new i don't have that range");
+//                }
+//
+//                int closestSb = oldRing.findBucketFromToken(queryStartToken);
+//                int closestEb = oldRing.findBucketFromToken(queryEndToken);
+//                int[] bucketForRing = service.createBucketForRing(oldRing);
+//
+//                boolean i3 = Arrays.binarySearch(bucketForRing, closestSb) >= 0;
+//                boolean i4 = Arrays.binarySearch(bucketForRing, closestEb) >= 0;
+//
+//                if(!i3 && !i4) {
+//                    System.out.println("old i don't have that range");
+//                }
+//            }
 
             Member sender = ctx.getSender();
             if (sender == null || !sender.equals(service.cluster.getCluster().getLocalMember()))

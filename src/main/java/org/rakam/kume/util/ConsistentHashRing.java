@@ -276,6 +276,10 @@ public class ConsistentHashRing {
         return findBucketFromToken(hash(key));
     }
 
+    public Bucket findBucket(String key) {
+        return buckets[findBucketFromToken(hash(key))];
+    }
+
     public Set<Member> getMembers() {
         HashSet<Member> members = new HashSet<>();
 

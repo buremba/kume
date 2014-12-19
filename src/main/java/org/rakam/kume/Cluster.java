@@ -3,7 +3,6 @@ package org.rakam.kume;
 import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.RemovalCause;
-import com.google.common.cache.RemovalListener;
 import com.google.common.cache.RemovalNotification;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.bootstrap.ServerBootstrap;
@@ -27,12 +26,13 @@ import io.netty.handler.codec.LengthFieldBasedFrameDecoder;
 import io.netty.handler.codec.LengthFieldPrepender;
 import io.netty.util.NetUtil;
 import org.rakam.kume.service.Service;
+import org.rakam.kume.service.ServiceConstructor;
 import org.rakam.kume.transport.Packet;
 import org.rakam.kume.transport.PacketDecoder;
 import org.rakam.kume.transport.PacketEncoder;
 import org.rakam.kume.transport.serialization.Serializer;
-import org.rakam.kume.util.NetworkUtil;
 import org.rakam.kume.util.Throwables;
+import org.rakam.kume.util.Tuple;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -47,6 +47,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -56,7 +57,7 @@ import java.util.stream.IntStream;
 /**
  * Created by buremba <Burak Emre Kabakcı> on 15/11/14 21:41.
  */
-public class Cluster implements Service, ClusterMBean {
+public class Cluster implements Service {
     final static Logger LOGGER = LoggerFactory.getLogger(Cluster.class);
 
     final EventLoopGroup bossGroup = new NioEventLoopGroup(1);
@@ -65,19 +66,19 @@ public class Cluster implements Service, ClusterMBean {
     final private List<Service> services;
 
     final private AtomicInteger messageSequence = new AtomicInteger();
+    final private ServiceContext<Cluster> internalBus = new ServiceContext<>((short) 0);
 
     final private ConcurrentHashMap<Member, Channel> clusterConnection = new ConcurrentHashMap<>();
 
     final Cache<Integer, CompletableFuture<Result>> messageHandlers = CacheBuilder.newBuilder()
-            .expireAfterWrite(105, TimeUnit.SECONDS).removalListener(new RemovalListener<Integer, CompletableFuture<Result>>() {
-                @Override
-                public void onRemoval(RemovalNotification<Integer, CompletableFuture<Result>> notification) {
-                    if (!notification.getCause().equals(RemovalCause.EXPLICIT))
-                        notification.getValue().complete(Result.FAILED);
-                }
+            .expireAfterWrite(105, TimeUnit.SECONDS)
+            .removalListener((RemovalNotification<Integer, CompletableFuture<Result>> notification) -> {
+                if (!notification.getCause().equals(RemovalCause.EXPLICIT))
+                    notification.getValue().complete(Result.FAILED);
             }).build();
     final private Member localMember;
     final private NioDatagramChannel multicastServer;
+    private final Map<String, Service> serviceNameMap;
     private Member master;
     final private Channel server;
     final private InetSocketAddress multicastAddress;
@@ -94,7 +95,7 @@ public class Cluster implements Service, ClusterMBean {
             // lazily create clients for fast startup
             clusterConnection.put(member, null);
         }
-        ;
+
         clusterStartTime = System.currentTimeMillis();
 
         ChannelFuture bind = new ServerBootstrap()
@@ -173,17 +174,19 @@ public class Cluster implements Service, ClusterMBean {
             multicastServer.writeAndFlush(new DatagramPacket(heartbeatBuf, multicastAddress, localMember.address));
         }, 500, 500, TimeUnit.MILLISECONDS);
 
-        services = IntStream.range(0, serviceGenerators.size())
+        services = new ArrayList<>(serviceGenerators.size()+16);
+        services.add(this);
+        IntStream.range(0, serviceGenerators.size())
                 .mapToObj(idx -> serviceGenerators.get(idx).constructor.newInstance(new ServiceContext((short) idx)))
-                .collect(Collectors.toList());
+                .collect(Collectors.toCollection(() -> services));
+
+        serviceNameMap = IntStream.range(0, serviceGenerators.size())
+                .mapToObj(idx -> new Tuple<>(serviceGenerators.get(idx).name, services.get(idx)))
+                .collect(Collectors.toConcurrentMap(x -> x._1, x -> x._2));
 
         LOGGER.info("{} started listening on {}, listening UDP multicast server {}", localMember, server.localAddress(), multicastAddress);
         server.config().setAutoRead(true);
         multicastServer.config().setAutoRead(true);
-    }
-
-    public Cluster(Collection<Member> cluster, ServiceInitializer serviceGenerators) throws InterruptedException {
-        this(cluster, serviceGenerators, new InetSocketAddress(NetworkUtil.getDefaultAddress(), 0));
     }
 
     public void addMember(Member member) {
@@ -248,10 +251,55 @@ public class Cluster implements Service, ClusterMBean {
         return Collections.unmodifiableSet(members);
     }
 
-    public <T extends Service> T getService(Class<T> serviceClass) {
-        return (T) services.stream().filter(service -> service.getClass().equals(serviceClass)).findAny().get();
+    public <T extends Service> T getService(String serviceName) {
+        return (T) serviceNameMap.get(serviceName);
     }
 
+    public <T extends Service> T getService(String serviceName, Class<T> clazz) {
+        return (T) serviceNameMap.get(serviceName);
+    }
+
+    public <T extends Service> T createService(String name, ServiceConstructor<T> ser) throws InterruptedException {
+        int size = services.size();
+        if (size == Short.MAX_VALUE) {
+            throw new IllegalStateException("Maximum number of allowed services is " + Short.MAX_VALUE);
+        }
+
+        Request<Cluster> bytes = (service, ctx) -> {
+            T s = ser.newInstance(new ServiceContext((short) size));
+            service.services.add(s);
+            service.serviceNameMap.put(name, s);
+            ctx.reply(true);
+        };
+        Map<Member, CompletableFuture<Result>> m = internalBus.askAllMembers(bytes, true);
+
+        CountDownLatch latch = new CountDownLatch(m.size());
+
+        m.forEach((key, value) -> tryUntilDone(latch, key, value, bytes));
+
+        latch.await();
+        return (T) serviceNameMap.get(name);
+    }
+
+    private void tryUntilDone(CountDownLatch latch, Member member, CompletableFuture<Result> future, Object message) {
+        future.thenAccept(x -> {
+            if (x.isFailed())
+                tryUntilDone(latch, member, internalBus.ask(member, message), message);
+            else
+                latch.countDown();
+        });
+    }
+
+    public boolean destroyService(String serviceName) {
+        Service service = serviceNameMap.remove(serviceName);
+        if (service == null)
+            return false;
+
+        service.destroy();
+        int serviceId = services.indexOf(service);
+        services.set(serviceId, null);
+        return true;
+    }
 
     public Member getLocalMember() {
         return localMember;
@@ -259,10 +307,6 @@ public class Cluster implements Service, ClusterMBean {
 
     private void send(Member server, Object bytes, short service) {
         sendInternal(getConnection(server), bytes, service);
-    }
-
-    private void send(Member server, Request request, short service) {
-        sendInternal(getConnection(server), request, service);
     }
 
     public void sendAllMembersInternal(Object bytes, short service) {
@@ -344,6 +388,7 @@ public class Cluster implements Service, ClusterMBean {
     public Serializer getSerializer() {
         return serializer;
     }
+
 
     public static class HeartbeatOperation extends InternalRequest {
         public HeartbeatOperation(Member me) {
@@ -473,8 +518,35 @@ public class Cluster implements Service, ClusterMBean {
             return askAllMembersInternal(bytes, service);
         }
 
+        public Map<Member, CompletableFuture<Result>> askAllMembers(Request<T> bytes, boolean includeThisMember) {
+            Map<Member, CompletableFuture<Result>> m = askAllMembersInternal(bytes, service);
+
+            if(includeThisMember) {
+                CompletableFuture<Result> f = new CompletableFuture<>();
+                Service s = services.get(service);
+                LocalOperationContext ctx = new LocalOperationContext(f, localMember);
+                workerGroup.execute(() -> s.handle(ctx, bytes));
+                m.put(localMember, f);
+            }
+
+            return m;
+        }
+
+        public Map<Member, CompletableFuture<Result>> askAllMembers(Object bytes, boolean includeThisMember) {
+            Map<Member, CompletableFuture<Result>> m = askAllMembersInternal(bytes, service);
+
+            if(includeThisMember) {
+                CompletableFuture<Result> f = new CompletableFuture<>();
+                Service s = services.get(service);
+                LocalOperationContext ctx = new LocalOperationContext(f, localMember);
+                workerGroup.execute(() -> s.handle(ctx, bytes));
+                m.put(localMember, f);
+            }
+            return m;
+        }
+
         public Map<Member, CompletableFuture<Result>> askAllMembers(Request<T> bytes) {
-            return askAllMembersInternal(bytes, service);
+            return askAllMembers(bytes, true);
         }
 
         public Cluster getCluster() {

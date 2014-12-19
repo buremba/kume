@@ -3,8 +3,11 @@ package org.rakam.kume.transport.serialization;
 import com.esotericsoftware.kryo.Kryo;
 import com.esotericsoftware.kryo.Serializer;
 import com.google.common.collect.ImmutableMap;
+import org.rakam.kume.Cluster;
+import org.rakam.kume.Member;
 import org.rakam.kume.transport.serialization.serializers.InetSocketAddressSerializer;
 import org.rakam.kume.transport.serialization.serializers.UnmodifiableCollectionsSerializer;
+import org.rakam.kume.util.ConsistentHashRing;
 
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
@@ -21,12 +24,12 @@ public class KryoFactory {
     }
 
     private static final Class<?>[] REG_CLASSES = {
-//            Collections.unmodifiableList(new ArrayList()).getClass(),
-//            Cluster.HeartbeatOperation.class,
-//            Member.class,
-//            InetSocketAddress.class,
-//            ConsistentHashRing.class,
-//            ConsistentHashRing.Bucket.class,
+            Collections.unmodifiableList(new ArrayList()).getClass(),
+            Cluster.HeartbeatOperation.class,
+            Member.class,
+            InetSocketAddress.class,
+            ConsistentHashRing.class,
+            ConsistentHashRing.Bucket.class,
     };
 
     private static final Map<Class, Serializer> SERIALIZERS = ImmutableMap.of(

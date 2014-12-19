@@ -27,7 +27,7 @@ public class PacketDecoder extends ByteToMessageDecoder {
                 return;
 
             int packetNum = buffer.readInt();
-            short serviceId = buffer.readShort();
+            int serviceId = buffer.readUnsignedShort();
             LOGGER.trace("Decoding Packet{sequence={}, service={}}", packetNum, serviceId);
 
             byte[] data = new byte[buffer.readableBytes()];

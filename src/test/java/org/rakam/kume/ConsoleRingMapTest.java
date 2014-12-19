@@ -20,13 +20,13 @@ public class ConsoleRingMapTest {
     @Test
     public void testMap() throws InterruptedException {
         ServiceInitializer services = new ServiceInitializer()
-                .add(bus -> new RingMap(bus, 2));
+                .add("map", bus -> new RingMap(bus, 2));
 
         Cluster cluster0 = new ClusterBuilder().services(services).start();
         Cluster cluster1 = new ClusterBuilder().services(services).start();
 
-        RingMap ringMap0 = cluster0.getService(RingMap.class);
-        RingMap ringMap1 = cluster0.getService(RingMap.class);
+        RingMap ringMap0 = cluster0.getService("map");
+        RingMap ringMap1 = cluster0.getService("map");
 
         ArrayList<Cluster> instances = new ArrayList<>(2);
         instances.add(cluster0);
@@ -61,13 +61,14 @@ public class ConsoleRingMapTest {
         System.out.printf("| Server            | Range          | Map Size |%n");
         System.out.format("+-------------------+----------------+----------+%n");
         for (Cluster cluster : list) {
-            RingMap service = cluster.getService(RingMap.class);
+            RingMap service = cluster.getService("map");
             double totalRingRange = service.getRing().getTotalRingRange(cluster.getLocalMember());
             System.out.format("| %-17s | %-14f | %-8d |%n", cluster.getLocalMember().getAddress(), totalRingRange, service.getLocalSize());
         }
         System.out.format("+-------------------+----------------+----------+%n");
 
-        Map<ConsistentHashRing.TokenRange, List<Member>> buckets = list.iterator().next().getService(RingMap.class).getRing().getBuckets();
+        RingMap map = list.iterator().next().getService("map");
+        Map<ConsistentHashRing.TokenRange, List<Member>> buckets = map.getRing().getBuckets();
 
         buckets.forEach((token, members) -> {
             double percentage = (Math.abs(token.end-token.start)/2)/(Long.MAX_VALUE/100.0);

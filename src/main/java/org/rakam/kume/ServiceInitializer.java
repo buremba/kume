@@ -9,22 +9,18 @@ import java.util.ArrayList;
  */
 public class ServiceInitializer extends ArrayList<ServiceInitializer.Constructor> {
 
-    public ServiceInitializer add(ServiceConstructor constructor, int numberOfInstance) {
-        add(new Constructor(constructor, numberOfInstance));
+    public ServiceInitializer add(String name, ServiceConstructor constructor) {
+        add(new Constructor(name, constructor));
         return this;
     }
 
-    public ServiceInitializer add(ServiceConstructor constructor) {
-        return add(constructor, 1);
-    }
-
     public static class Constructor {
-        ServiceConstructor constructor;
-        int numberOfInstance;
+        final String name;
+        final ServiceConstructor constructor;
 
-        public Constructor(ServiceConstructor constructor, int numberOfInstance) {
+        public Constructor(String name, ServiceConstructor constructor) {
             this.constructor = constructor;
-            this.numberOfInstance = numberOfInstance;
+            this.name = name;
         }
     }
 }

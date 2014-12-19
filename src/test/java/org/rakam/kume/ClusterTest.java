@@ -15,7 +15,7 @@ public class ClusterTest extends KumeTest {
         CountDownLatch latch = new CountDownLatch(2);
 
         ServiceInitializer constructors = new ServiceInitializer()
-              .add((bus) -> new MyService(bus, latch));
+              .add("test", (bus) -> new MyService(bus, latch));
 
         Cluster cluster0 = new ClusterBuilder().services(constructors).start();
         Cluster cluster1 = new ClusterBuilder().services(constructors).start();
@@ -23,7 +23,7 @@ public class ClusterTest extends KumeTest {
 
         waitForDiscovery(cluster0, 2);
 
-        MyService service = cluster0.getService(MyService.class);
+        MyService service = cluster0.getService("test");
         service.pingAll();
 
         latch.await();
