@@ -11,15 +11,15 @@ import java.util.Map;
  */
 public class PutAllRequest implements Request<RingMap> {
 
-    private final List<Map.Entry<String, Integer>> entries;
+    private final List<Map.Entry> entries;
 
-    public PutAllRequest(List<Map.Entry<String, Integer>> entries) {
+    public PutAllRequest(List<Map.Entry> entries) {
         this.entries = entries;
     }
 
     @Override
     public void run(RingMap service, OperationContext ctx) {
-        for (Map.Entry<String, Integer> entry : entries) {
+        for (Map.Entry<Object, Object> entry : entries) {
             service.putLocal(entry.getKey(), entry.getValue());
         }
     }

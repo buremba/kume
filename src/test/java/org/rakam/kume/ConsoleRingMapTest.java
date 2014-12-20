@@ -1,6 +1,7 @@
 package org.rakam.kume;
 
 import org.junit.Test;
+import org.rakam.kume.service.crdt.gcounter.GCounterService;
 import org.rakam.kume.service.ringmap.RingMap;
 import org.rakam.kume.util.ConsistentHashRing;
 
@@ -20,7 +21,7 @@ public class ConsoleRingMapTest {
     @Test
     public void testMap() throws InterruptedException {
         ServiceInitializer services = new ServiceInitializer()
-                .add("map", bus -> new RingMap(bus, 2));
+                .add("map", bus -> new RingMap<String, GCounterService>(bus, GCounterService::combine, 2));
 
         Cluster cluster0 = new ClusterBuilder().services(services).start();
         Cluster cluster1 = new ClusterBuilder().services(services).start();

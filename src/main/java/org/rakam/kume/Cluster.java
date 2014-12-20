@@ -67,7 +67,7 @@ public class Cluster implements Service {
     final private List<Service> services;
 
     final private AtomicInteger messageSequence = new AtomicInteger();
-    final private ServiceContext<Cluster> internalBus = new ServiceContext<>((short) 0);
+    final private ServiceContext<Cluster> internalBus = new ServiceContext<>(0, "internal");
 
     final private ConcurrentHashMap<Member, Channel> clusterConnection = new ConcurrentHashMap<>();
 
@@ -84,8 +84,6 @@ public class Cluster implements Service {
     final private Channel server;
     final private InetSocketAddress multicastAddress;
     final private List<MembershipListener> membershipListeners = Collections.synchronizedList(new ArrayList<>());
-
-    final private Serializer serializer = new Serializer();
 
     final private Map<Member, Long> heartbeatMap = new ConcurrentHashMap<>();
     final private long clusterStartTime;
@@ -159,7 +157,7 @@ public class Cluster implements Service {
         multicastServer = (NioDatagramChannel) a.bind(multicastAddress.getPort()).sync().channel();
         multicastServer.joinGroup(multicastAddress, NetworkUtil.getPublicInterface()).sync();
 
-        ByteBuf heartbeatBuf = Unpooled.unreleasableBuffer(serializer.toByteBuf(new HeartbeatOperation(localMember)));
+        ByteBuf heartbeatBuf = Unpooled.unreleasableBuffer(Serializer.toByteBuf(new HeartbeatOperation(localMember)));
 
         multicastServer.writeAndFlush(new DatagramPacket(heartbeatBuf, multicastAddress));
 
@@ -178,8 +176,10 @@ public class Cluster implements Service {
         services = new ArrayList<>(serviceGenerators.size()+16);
         services.add(this);
         IntStream.range(0, serviceGenerators.size())
-                .mapToObj(idx -> serviceGenerators.get(idx).constructor.newInstance(new ServiceContext((short) idx)))
-                .collect(Collectors.toCollection(() -> services));
+                .mapToObj(idx -> {
+                    ServiceInitializer.Constructor c = serviceGenerators.get(idx);
+                    return c.constructor.newInstance(new ServiceContext(idx, c.name));
+                }).collect(Collectors.toCollection(() -> services));
 
         serviceNameMap = IntStream.range(0, serviceGenerators.size())
                 .mapToObj(idx -> new Tuple<>(serviceGenerators.get(idx).name, services.get(idx+1)))
@@ -267,7 +267,7 @@ public class Cluster implements Service {
         }
 
         Request<Cluster> bytes = (service, ctx) -> {
-            T s = ser.newInstance(new ServiceContext((short) size));
+            T s = ser.newInstance(new ServiceContext(size, name));
             service.services.add(s);
             service.serviceNameMap.put(name, s);
             ctx.reply(true);
@@ -306,11 +306,11 @@ public class Cluster implements Service {
         return localMember;
     }
 
-    private void send(Member server, Object bytes, short service) {
+    private void send(Member server, Object bytes, int service) {
         sendInternal(getConnection(server), bytes, service);
     }
 
-    public void sendAllMembersInternal(Object bytes, short service) {
+    public void sendAllMembersInternal(Object bytes, int service) {
         clusterConnection.forEach((member, conn) -> {
             if (!member.equals(localMember)) {
                 LOGGER.debug("member {} ", member);
@@ -319,7 +319,7 @@ public class Cluster implements Service {
         });
     }
 
-    public Map<Member, CompletableFuture<Result>> askAllMembersInternal(Object bytes, short service) {
+    public Map<Member, CompletableFuture<Result>> askAllMembersInternal(Object bytes, int service) {
         Map<Member, CompletableFuture<Result>> map = new ConcurrentHashMap<>();
         clusterConnection.forEach((member, conn) -> {
             if (!member.equals(localMember)) {
@@ -342,12 +342,12 @@ public class Cluster implements Service {
         workerGroup.shutdownGracefully().await();
     }
 
-    public void sendInternal(Channel channel, Object obj, short service) {
+    public void sendInternal(Channel channel, Object obj, int service) {
         Packet message = new Packet(obj, service);
         channel.writeAndFlush(message);
     }
 
-    public CompletableFuture<Result> askInternal(Channel channel, Object obj, short service) {
+    public CompletableFuture<Result> askInternal(Channel channel, Object obj, int service) {
         CompletableFuture<Result> future = new CompletableFuture<>();
 
         int andIncrement = messageSequence.getAndIncrement();
@@ -385,11 +385,6 @@ public class Cluster implements Service {
     public List<Service> getServices() {
         return Collections.unmodifiableList(services);
     }
-
-    public Serializer getSerializer() {
-        return serializer;
-    }
-
 
     public static class HeartbeatOperation extends InternalRequest {
         public HeartbeatOperation(Member me) {
@@ -464,10 +459,12 @@ public class Cluster implements Service {
     }
 
     public class ServiceContext<T extends Service> {
-        short service;
+        private final String serviceName;
+        private final int service;
 
-        public ServiceContext(short service) {
+        public ServiceContext(int service, String serviceName) {
             this.service = service;
+            this.serviceName = serviceName;
         }
 
         public void send(Member server, Object bytes) {
@@ -490,6 +487,14 @@ public class Cluster implements Service {
 
         public void sendAllMembers(Request<T> bytes) {
             sendAllMembersInternal(bytes, service);
+        }
+
+        public int serviceId() {
+            return service;
+        }
+
+        public String serviceName() {
+            return serviceName;
         }
 
         public CompletableFuture<Result> ask(Member server, Object bytes) {

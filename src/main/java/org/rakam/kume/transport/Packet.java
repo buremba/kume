@@ -14,7 +14,7 @@ public class Packet {
         this.service = service;
     }
 
-    public Packet(Object data, short service) {
+    public Packet(Object data, int service) {
         this.sequence = -1;
         this.data = data;
         this.service = service;

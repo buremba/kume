@@ -3,12 +3,14 @@ package org.rakam.kume.service.ringmap;
 import org.rakam.kume.Member;
 import org.rakam.kume.OperationContext;
 import org.rakam.kume.Request;
+import org.rakam.kume.transport.serialization.Serializer;
 import org.rakam.kume.util.ConsistentHashRing;
 
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
 
+import static java.util.Map.Entry;
 import static org.rakam.kume.util.ConsistentHashRing.TokenRange;
 import static org.rakam.kume.util.ConsistentHashRing.isTokenBetween;
 
@@ -18,28 +20,26 @@ import static org.rakam.kume.util.ConsistentHashRing.isTokenBetween;
 class ChangeRingRequest implements Request<RingMap> {
     private final long queryStartToken;
     private final long queryEndToken;
-    private final ConsistentHashRing oldRing;
 
-    public ChangeRingRequest(long queryStartToken, long queryEndToken, ConsistentHashRing oldRing) {
+    public ChangeRingRequest(long queryStartToken, long queryEndToken) {
         this.queryStartToken = queryStartToken;
         this.queryEndToken = queryEndToken;
-        this.oldRing = oldRing;
     }
 
     @Override
     public void run(RingMap service, OperationContext ctx) {
-        synchronized (service.cluster) {
-            Map<String, Integer> moveEntries = new HashMap<>();
+        synchronized (service.ctx) {
+            Map moveEntries = new HashMap<>();
 
             ConsistentHashRing serviceRing = service.getRing();
-            int startBucket = serviceRing.findBucketFromToken(queryStartToken);
-            int endBucket = serviceRing.findBucketFromToken(queryEndToken);
+            int startBucket = serviceRing.findBucketIdFromToken(queryStartToken);
+            int endBucket = serviceRing.findBucketIdFromToken(queryEndToken);
 
             int loopEnd = endBucket - startBucket < 0 ? endBucket + serviceRing.getBucketCount() : endBucket;
 
             for (int bckIdz = startBucket; bckIdz <= loopEnd; bckIdz++) {
                 int bckId = bckIdz % serviceRing.getBucketCount();
-                Map<String, Integer> partition = service.getPartition(bckId);
+                Map partition = service.getPartition(bckId);
                 if (partition != null) {
                     // for the current ring implementation, most of the time
                     // queryEndToken == serviceRing.getBucket(bckId + 1).token
@@ -51,7 +51,7 @@ class ChangeRingRequest implements Request<RingMap> {
                         moveEntries.putAll(partition);
                     } else {
                         partition.forEach((key, value) -> {
-                            long hash = serviceRing.hash(key);
+                            long hash = serviceRing.hash(Serializer.toByteArray(key));
                             if (isTokenBetween(hash, queryStartToken, queryEndToken)) {
                                 moveEntries.put(key, value);
                             }
@@ -61,12 +61,11 @@ class ChangeRingRequest implements Request<RingMap> {
                     // it seems partition table is changed (most probably updated before this request is processed)
                     // so the old items must be in dataWaitingForMigration.
 
-                    Iterator<Map.Entry<TokenRange, Map<String, Integer>>> it;
-                    it = service.dataWaitingForMigration.entrySet().iterator();
+                    Iterator<Entry<TokenRange, Map>> it = service.dataWaitingForMigration.entrySet().iterator();
                     while (it.hasNext()) {
-                        Map.Entry<TokenRange, Map<String, Integer>> next = it.next();
+                        Entry<TokenRange, Map> next = it.next();
                         TokenRange token = next.getKey();
-                        Map<String, Integer> map = next.getValue();
+                        Map map = next.getValue();
 
                         boolean startTokenIn = isTokenBetween(token.start, queryStartToken, queryEndToken);
                         boolean endTokenIn = isTokenBetween(token.end, queryStartToken, queryEndToken);
@@ -75,10 +74,10 @@ class ChangeRingRequest implements Request<RingMap> {
                             moveEntries.putAll(map);
                             it.remove();
                         } else if (startTokenIn || endTokenIn) {
-                            Iterator<Map.Entry<String, Integer>> iterator = map.entrySet().iterator();
+                            Iterator<Entry> iterator = map.entrySet().iterator();
                             while (iterator.hasNext()) {
-                                Map.Entry<String, Integer> n = iterator.next();
-                                long entryToken = serviceRing.hash(n.getKey());
+                                Entry n = iterator.next();
+                                long entryToken = serviceRing.hash(Serializer.toByteArray(n.getKey()));
                                 if (isTokenBetween(entryToken, queryStartToken, queryEndToken)) {
                                     moveEntries.put(n.getKey(), n.getValue());
                                     iterator.remove();
@@ -98,8 +97,8 @@ class ChangeRingRequest implements Request<RingMap> {
 //                    System.out.println("new i don't have that range");
 //                }
 //
-//                int closestSb = oldRing.findBucketFromToken(queryStartToken);
-//                int closestEb = oldRing.findBucketFromToken(queryEndToken);
+//                int closestSb = oldRing.findBucketIdFromToken(queryStartToken);
+//                int closestEb = oldRing.findBucketIdFromToken(queryEndToken);
 //                int[] bucketForRing = service.createBucketForRing(oldRing);
 //
 //                boolean i3 = Arrays.binarySearch(bucketForRing, closestSb) >= 0;
@@ -111,7 +110,7 @@ class ChangeRingRequest implements Request<RingMap> {
 //            }
 
             Member sender = ctx.getSender();
-            if (sender == null || !sender.equals(service.cluster.getCluster().getLocalMember()))
+            if (sender == null || !sender.equals(service.ctx.getCluster().getLocalMember()))
                 RingMap.LOGGER.debug("moving {} entries [{}, {}] to {}", moveEntries.size(), queryStartToken, queryEndToken, sender);
             else
                 RingMap.LOGGER.debug("moving {} entries [{}, {}] to local", moveEntries.size(), queryStartToken, queryEndToken);

@@ -11,7 +11,7 @@ import io.netty.buffer.Unpooled;
  */
 public class Serializer {
 
-    public ByteBuf toByteBuf(Object obj) {
+    public static ByteBuf toByteBuf(Object obj) {
         Kryo kryo = KryoFactory.getKryoInstance();
 
         Output output = new Output(64, 4096);
@@ -25,7 +25,21 @@ public class Serializer {
         return Unpooled.copiedBuffer(output.getBuffer(), 0, position);
     }
 
-    public <T> T toObject(ByteBuf obj, int size) {
+    public static byte[] toByteArray(Object obj) {
+        Kryo kryo = KryoFactory.getKryoInstance();
+
+        Output output = new Output(64, 4096);
+        output.setPosition(2);
+        kryo.writeClassAndObject(output, obj);
+        int position = output.position();
+
+        output.setPosition(0);
+        output.writeShort(position-2);
+
+        return output.getBuffer();
+    }
+
+    public static <T> T toObject(ByteBuf obj, int size) {
         Kryo kryo = KryoFactory.getKryoInstance();
 
         byte[] bytes = new byte[size];

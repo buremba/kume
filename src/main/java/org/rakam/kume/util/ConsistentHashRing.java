@@ -102,7 +102,7 @@ public class ConsistentHashRing {
         return new TokenRange(i, buckets[i].token, getBucketFromRing(buckets, i + 1).token);
     }
 
-    public int findBucketFromToken(long l) {
+    public int findBucketIdFromToken(long l) {
         int low = 0;
         int high = buckets.length - 1;
 
@@ -120,8 +120,25 @@ public class ConsistentHashRing {
         return high;
     }
 
+    public Bucket findBucketFromToken(long l) {
+        return buckets[findBucketIdFromToken(l)];
+    }
+
+
     public static long hash(String hash) {
         return hashFunction.hashString(hash, Charset.forName("UTF-8")).asLong();
+    }
+
+    public static long hash(byte[] hash) {
+        return hashFunction.hashBytes(hash).asLong();
+    }
+
+    public static long hash(long hash) {
+        return hashFunction.hashLong(hash).asLong();
+    }
+
+    public static long hash(int hash) {
+        return hashFunction.hashInt(hash).asLong();
     }
 
     private Bucket getBucketFromRing(Bucket[] buckets, int i) {
@@ -273,11 +290,11 @@ public class ConsistentHashRing {
     }
 
     public int findBucketId(String key) {
-        return findBucketFromToken(hash(key));
+        return findBucketIdFromToken(hash(key));
     }
 
     public Bucket findBucket(String key) {
-        return buckets[findBucketFromToken(hash(key))];
+        return buckets[findBucketIdFromToken(hash(key))];
     }
 
     public Set<Member> getMembers() {
