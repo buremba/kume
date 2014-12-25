@@ -32,8 +32,8 @@ public class ConsistentHashRing {
 
 
     public static boolean isTokenBetween(long hash, long start, long end) {
-        if(start <= end) return hash >= start && hash <= end;
-        // we're in the start point of ring
+        if (start <= end) return hash >= start && hash <= end;
+            // we're in the start point of ring
         else return hash > start || hash < end;
     }
 
@@ -249,6 +249,9 @@ public class ConsistentHashRing {
             return new ConsistentHashRing(buckets, bucketPerNode, replicationFactor);
         }
 
+        if (getMemberCount() == 1)
+            throw new IllegalStateException("ring must contain at least one member");
+
         List<Bucket> result = Lists.newArrayList(this.buckets);
         int newMemberSize = (buckets.length / bucketPerNode) - 1;
 
@@ -268,7 +271,7 @@ public class ConsistentHashRing {
         // replace this member to another in other buckets which is replicated by this member
         Stream<Bucket> resultArr = result.stream()
                 .map(bucket -> {
-                    if(!bucket.members.contains(member))
+                    if (!bucket.members.contains(member))
                         return bucket;
                     HashSet arrayList = new HashSet(bucket.members);
                     arrayList.remove(member);

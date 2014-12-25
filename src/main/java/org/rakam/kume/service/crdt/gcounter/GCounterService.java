@@ -6,7 +6,6 @@ import org.rakam.kume.MembershipListener;
 import org.rakam.kume.service.Service;
 import org.rakam.kume.util.ConsistentHashRing;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicReference;
@@ -19,6 +18,7 @@ import static com.google.common.base.Preconditions.checkArgument;
 public class GCounterService implements Service, MembershipListener {
     final int replicationFactor;
     private final Cluster.ServiceContext<GCounterService> ctx;
+    private final ConsistentHashRing ring;
     private List<Member> ownedMembers;
     GCounter counter;
 
@@ -27,9 +27,13 @@ public class GCounterService implements Service, MembershipListener {
         ctx = clusterContext;
         Cluster cluster = ctx.getCluster();
         cluster.addMembershipListener(this);
-        ConsistentHashRing ring = new ConsistentHashRing(cluster.getMembers(), 1, replicationFactor);
+        ring = new ConsistentHashRing(cluster.getMembers(), 1, replicationFactor);
+        arrangePartitions(ring);
+    }
+
+    private synchronized void arrangePartitions(ConsistentHashRing ring) {
         ownedMembers = ring.findBucket(ctx.serviceName()).members;
-        if(ownedMembers.contains(cluster.getLocalMember())) {
+        if(ownedMembers.contains(ctx.getCluster().getLocalMember())) {
             counter = new GCounter();
         }
     }
@@ -44,35 +48,35 @@ public class GCounterService implements Service, MembershipListener {
     }
 
 
-    public CompletableFuture<GCounter> get() {
+    public CompletableFuture<GCounter> asyncAndGet() {
         AtomicReference<GCounter> c = new AtomicReference<>();
-        CompletableFuture[] map = ownedMembers.stream()
-                .map(member -> ctx.ask(member, (service, ctx) -> service.get()).thenAccept(x -> {
-            if (x.isSucceeded()) {
-                c.getAndAccumulate((GCounter) x.getData(), GCounter::combine);
-            }
-        })).toArray(CompletableFuture[]::new);
-
+        CompletableFuture<GCounter>[] map = ownedMembers.stream()
+                .map(member -> {
+                    CompletableFuture<GCounter> ask = ctx.ask(member, (service, ctx) -> service.get());
+                    ask.thenAccept(x -> c.getAndAccumulate(x, GCounter::combine));
+                    return ask;
+                }).toArray(CompletableFuture[]::new);
 
         return CompletableFuture.allOf(map).thenApply(x -> c.get());
     }
 
+    public long get() {
+        return counter.get();
+    }
+
     @Override
     public void memberAdded(Member member) {
-
+        arrangePartitions(ring.addNode(member));
     }
 
     @Override
     public void memberRemoved(Member member) {
-
+        arrangePartitions(ring.removeNode(member));
     }
 
-    private void memberChanged() {
-        Cluster cluster = ctx.getCluster();
-        ConsistentHashRing ring = new ConsistentHashRing(cluster.getMembers(), 1, replicationFactor);
-        ArrayList<Member> newOwnedMembers = ring.findBucket(ctx.serviceName()).members;
-        if(ownedMembers.contains(cluster.getLocalMember())) {
-            counter = new GCounter();
-        }
+    @Override
+    public void clusterChanged() {
+        ConsistentHashRing ring = new ConsistentHashRing(ctx.getCluster().getMembers(), 1, replicationFactor);
+        arrangePartitions(ring);
     }
 }

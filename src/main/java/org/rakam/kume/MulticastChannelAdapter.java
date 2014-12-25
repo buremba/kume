@@ -6,6 +6,8 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.channel.socket.DatagramPacket;
 import io.netty.util.ReferenceCountUtil;
+import org.rakam.kume.transport.MulticastPacket;
+import org.rakam.kume.transport.serialization.Serializer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -26,10 +28,11 @@ public class MulticastChannelAdapter extends ChannelInboundHandlerAdapter {
     @Override
     public void channelRead(ChannelHandlerContext ctx, Object msg) {
         try {
-            ByteBuf content = ((DatagramPacket) msg).content();
+            DatagramPacket msg1 = (DatagramPacket) msg;
+            ByteBuf content = msg1.content();
             Object o;
             try {
-                o = cluster.getSerializer().toObject(content, content.readShort());
+                o = Serializer.toObject(content, content.readShort());
             } catch (KryoException e) {
                 LOGGER.warn("Kryo couldn't deserialize packet", e);
                 return;
@@ -38,13 +41,12 @@ public class MulticastChannelAdapter extends ChannelInboundHandlerAdapter {
                 return;
             }
 
-            if (o instanceof Cluster.InternalRequest) {
-                Cluster.InternalRequest req = ((Cluster.InternalRequest) o);
+            if (o instanceof MulticastPacket) {
+                MulticastPacket req = (MulticastPacket) o;
                 Member sender = req.sender;
                 if (sender == null || sender.equals(cluster.getLocalMember()))
                     return;
-
-                req.run(cluster, null);
+                req.data.run(cluster, new MulticastOperationContext(sender));
             }else {
                 LOGGER.warn("multicast server in member {}, couldn't handle package: {}", cluster.getLocalMember(), msg);
             }

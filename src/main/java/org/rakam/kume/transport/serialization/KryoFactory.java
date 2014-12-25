@@ -12,6 +12,7 @@ import org.rakam.kume.util.ConsistentHashRing;
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.Map;
 
 /**
@@ -25,7 +26,7 @@ public class KryoFactory {
 
     private static final Class<?>[] REG_CLASSES = {
             Collections.unmodifiableList(new ArrayList()).getClass(),
-            Cluster.HeartbeatOperation.class,
+            Cluster.HeartbeatRequest.class,
             Member.class,
             InetSocketAddress.class,
             ConsistentHashRing.class,
@@ -34,13 +35,14 @@ public class KryoFactory {
 
     private static final Map<Class, Serializer> SERIALIZERS = ImmutableMap.of(
             InetSocketAddress.class, new InetSocketAddressSerializer(),
-            Collections.unmodifiableList(new ArrayList()).getClass(), new UnmodifiableCollectionsSerializer()
+            Collections.unmodifiableList(new ArrayList()).getClass(), new UnmodifiableCollectionsSerializer(),
+            Collections.unmodifiableSet(new HashSet<>()).getClass(), new UnmodifiableCollectionsSerializer()
     );
 
     private static final ThreadLocal<Kryo> kryos = new ThreadLocal<Kryo>() {
         protected Kryo initialValue() {
             Kryo kryo = new Kryo();
-//            UnmodifiableCollectionsSerializer.registerSerializers(kryo);
+            UnmodifiableCollectionsSerializer.registerSerializers(kryo);
             for (Class<?> clazz : REG_CLASSES) {
                 Serializer serializer = SERIALIZERS.get(clazz);
                 if (serializer == null)

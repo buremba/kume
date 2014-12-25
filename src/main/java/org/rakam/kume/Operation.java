@@ -1,16 +1,9 @@
 package org.rakam.kume;
 
+import org.rakam.kume.service.Service;
+
 /**
- * Created by buremba <Burak Emre Kabakcı> on 16/11/14 18:44.
+ * Created by buremba <Burak Emre Kabakcı> on 25/12/14 16:51.
  */
-public interface Operation extends Request {
-
-    default Void run() {
-        execute();
-        return null;
-    }
-
-    public void execute();
-
-    abstract public int getService();
+public interface Operation<T extends Service> extends Request<T, Void> {
 }

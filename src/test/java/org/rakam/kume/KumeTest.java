@@ -41,6 +41,11 @@ public class KumeTest {
             public void memberRemoved(Member member) {
 
             }
+
+            @Override
+            public void clusterChanged() {
+
+            }
         });
         countDownLatch.await();
     }
@@ -57,6 +62,11 @@ public class KumeTest {
             @Override
             public void memberRemoved(Member member) {
                 countDownLatch.countDown();
+            }
+
+            @Override
+            public void clusterChanged() {
+
             }
         });
         countDownLatch.await();

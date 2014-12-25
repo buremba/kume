@@ -2,14 +2,15 @@ package org.rakam.kume;
 
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
-import io.netty.util.collection.IntObjectHashMap;
 import org.junit.Test;
-import org.rakam.kume.service.Service;
+import org.rakam.kume.service.crdt.gcounter.GCounter;
 import org.rakam.kume.service.ringmap.RingMap;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeoutException;
@@ -29,19 +30,16 @@ public class RingMapTest extends KumeTest {
         root.setLevel(Level.DEBUG);
 
         ServiceInitializer services = new ServiceInitializer()
-                .add("map", bus -> new RingMap(bus, 2));
+                .add("map", bus -> new RingMap<String, GCounter>(bus, GCounter::combine, 2));
 
         Cluster cluster0 = new ClusterBuilder().services(services).start();
 
-        IntObjectHashMap<Service> entries = new IntObjectHashMap<>();
-
         RingMap ringMap0 = cluster0.getService("map");
-
-        RingMap service = cluster0.createService("tableName", bus -> new RingMap(bus, 2));
 
         for (int i = 0; i < 1000; i++) {
             ringMap0.put("test" + System.currentTimeMillis() + i, i).get();
         }
+        ringMap0.logOwnedBuckets();
     }
 
     @Test
@@ -51,7 +49,7 @@ public class RingMapTest extends KumeTest {
 
         Cluster cluster0 = new ClusterBuilder().start();
 
-        RingMap ringMap0 = cluster0.createService("tableName", bus -> new RingMap(bus, 2));
+        RingMap<String, Integer> ringMap0 = cluster0.createService("tableName", bus -> new RingMap<>(bus, Math::max, 2));
 
         for (int i = 0; i < 1000; i++) {
             ringMap0.put("test" + System.currentTimeMillis() + i, i).get();
@@ -61,7 +59,7 @@ public class RingMapTest extends KumeTest {
     @Test
     public void testMap() throws InterruptedException, TimeoutException, ExecutionException {
         ServiceInitializer services = new ServiceInitializer()
-                .add("map", bus -> new RingMap(bus, 2));
+                .add("map", bus -> new RingMap<String, GCounter>(bus, GCounter::combine, 2));
 
         Cluster cluster0 = new ClusterBuilder().services(services).start();
         Cluster cluster1 = new ClusterBuilder().services(services).start();
@@ -87,7 +85,7 @@ public class RingMapTest extends KumeTest {
     @Test
     public void testMapNewNode() throws InterruptedException, TimeoutException, ExecutionException {
         ServiceInitializer services = new ServiceInitializer()
-                .add("map", bus -> new RingMap(bus, 2));
+                .add("map", bus -> new RingMap<String, GCounter>(bus, GCounter::combine, 2));
 
         Cluster cluster0 = new ClusterBuilder().services(services).start();
 
@@ -102,14 +100,15 @@ public class RingMapTest extends KumeTest {
         RingMap ringMap1 = cluster1.getService("map");
         waitForMigrationEnd(ringMap1);
 
-        Integer size = ringMap1.size().get().values().stream().reduce((x, y) -> x + y).get();
+        CompletableFuture<Map<Member, Integer>> size1 = ringMap1.size();
+        Integer size = size1.join().values().stream().reduce((x, y) -> x + y).get();
         assertEquals(size.intValue(), 2000);
     }
 
     @Test
     public void testMapNodeFailure() throws InterruptedException, TimeoutException, ExecutionException {
         ServiceInitializer services = new ServiceInitializer()
-                .add("map", bus -> new RingMap(bus, 2));
+                .add("map", bus -> new RingMap<String, GCounter>(bus, GCounter::combine, 2));
 
         Cluster cluster0 = new ClusterBuilder().services(services).start();
         Cluster cluster1 = new ClusterBuilder().services(services).start();
@@ -128,7 +127,8 @@ public class RingMapTest extends KumeTest {
         cluster2.close();
         waitForMigrationEnd(ringMap0);
 
-        Optional<Integer> test = ringMap0.size().get().values().stream().reduce((i0, i1) -> i0 + i1);
+        CompletableFuture<Map<Member, Integer>> size1 = ringMap0.size();
+        Optional<Integer> test = size1.get().values().stream().reduce((i0, i1) -> i0 + i1);
         assertTrue(test.isPresent());
         assertEquals(test.get().intValue(), 200);
     }
@@ -154,7 +154,7 @@ public class RingMapTest extends KumeTest {
     @Test
     public void testMapMultipleThreads() throws InterruptedException, TimeoutException, ExecutionException {
         ServiceInitializer services = new ServiceInitializer()
-                .add("map", bus -> new RingMap(bus, 2));
+                .add("map", bus -> new RingMap<String, GCounter>(bus, GCounter::combine, 2));
 
         Cluster cluster0 = new ClusterBuilder().services(services).start();
         new ClusterBuilder().services(services).start();
@@ -191,7 +191,8 @@ public class RingMapTest extends KumeTest {
         }
 
         countDownLatch.await();
-        Optional<Integer> test = ringMap1.size().get().values().stream().reduce((i0, i1) -> i0 + i1);
+        CompletableFuture<Map<Member, Integer>> size = ringMap1.size();
+        Optional<Integer> test = size.get().values().stream().reduce((i0, i1) -> i0 + i1);
         assertTrue(test.isPresent());
         assertEquals(test.get().intValue(), 2000 * 2);
     }

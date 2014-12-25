@@ -6,9 +6,7 @@ import com.google.common.cache.RemovalCause;
 import com.google.common.cache.RemovalNotification;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.bootstrap.ServerBootstrap;
-import io.netty.buffer.ByteBuf;
 import io.netty.buffer.PooledByteBufAllocator;
-import io.netty.buffer.Unpooled;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelInitializer;
@@ -16,22 +14,16 @@ import io.netty.channel.ChannelOption;
 import io.netty.channel.ChannelPipeline;
 import io.netty.channel.EventLoopGroup;
 import io.netty.channel.nio.NioEventLoopGroup;
-import io.netty.channel.socket.DatagramPacket;
-import io.netty.channel.socket.InternetProtocolFamily;
 import io.netty.channel.socket.SocketChannel;
-import io.netty.channel.socket.nio.NioDatagramChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
 import io.netty.handler.codec.LengthFieldBasedFrameDecoder;
 import io.netty.handler.codec.LengthFieldPrepender;
-import io.netty.util.NetUtil;
 import org.rakam.kume.service.Service;
 import org.rakam.kume.service.ServiceConstructor;
 import org.rakam.kume.transport.Packet;
 import org.rakam.kume.transport.PacketDecoder;
 import org.rakam.kume.transport.PacketEncoder;
-import org.rakam.kume.transport.serialization.Serializer;
-import org.rakam.kume.util.NetworkUtil;
 import org.rakam.kume.util.Throwables;
 import org.rakam.kume.util.Tuple;
 import org.slf4j.Logger;
@@ -45,9 +37,11 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
@@ -69,33 +63,33 @@ public class Cluster implements Service {
     final private AtomicInteger messageSequence = new AtomicInteger();
     final private ServiceContext<Cluster> internalBus = new ServiceContext<>(0, "internal");
 
-    final private ConcurrentHashMap<Member, Channel> clusterConnection = new ConcurrentHashMap<>();
+    final ConcurrentHashMap<Member, Channel> clusterConnection = new ConcurrentHashMap<>();
 
-    final Cache<Integer, CompletableFuture<Result>> messageHandlers = CacheBuilder.newBuilder()
+    final Cache<Integer, CompletableFuture<Object>> messageHandlers = CacheBuilder.newBuilder()
             .expireAfterWrite(105, TimeUnit.SECONDS)
-            .removalListener((RemovalNotification<Integer, CompletableFuture<Result>> notification) -> {
+            .removalListener((RemovalNotification<Integer, CompletableFuture<Object>> notification) -> {
                 if (!notification.getCause().equals(RemovalCause.EXPLICIT))
-                    notification.getValue().complete(Result.FAILED);
+                    notification.getValue().cancel(false);
             }).build();
     final private Member localMember;
-    final private NioDatagramChannel multicastServer;
+    final private MulticastServerHandler multicastServer;
     private final Map<String, Service> serviceNameMap;
     private Member master;
+    private Set<Member> members;
+    private long lastContactedTimeMaster;
     final private Channel server;
-    final private InetSocketAddress multicastAddress;
+    private int lastVotedCursor;
     final private List<MembershipListener> membershipListeners = Collections.synchronizedList(new ArrayList<>());
 
     final private Map<Member, Long> heartbeatMap = new ConcurrentHashMap<>();
     final private long clusterStartTime;
-    final private ScheduledFuture<?> heartbeatTask;
+    private ScheduledFuture<?> heartbeatTask;
+    private ConcurrentMap<Member, Integer> pendingUserVotes = CacheBuilder.newBuilder().expireAfterWrite(100, TimeUnit.SECONDS).<Member, Integer>build().asMap();
+    private MemberState memberState;
 
-    public Cluster(Collection<Member> cluster, ServiceInitializer serviceGenerators, InetSocketAddress serverAddress) throws InterruptedException {
-        for (Member member : cluster) {
-            // lazily create clients for fast startup
-            clusterConnection.put(member, null);
-        }
-
+    public Cluster(Collection<Member> members, ServiceInitializer serviceGenerators, InetSocketAddress serverAddress) throws InterruptedException {
         clusterStartTime = System.currentTimeMillis();
+        this.members = new HashSet<>(members);
 
         ChannelFuture bind = new ServerBootstrap()
                 .childOption(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
@@ -136,62 +130,31 @@ public class Cluster implements Service {
         localMember = new Member((InetSocketAddress) server.localAddress());
         master = localMember;
 
-        multicastAddress = new InetSocketAddress("224.0.67.67", 5001);
+        InetSocketAddress multicastAddress = new InetSocketAddress("224.0.67.67", 5001);
+        multicastServer = new MulticastServerHandler(this, multicastAddress)
+                .start();
 
-        EventLoopGroup group = new NioEventLoopGroup();
+        LOGGER.info("{} started , listening UDP multicast server {}", localMember, multicastAddress);
 
-        Bootstrap a = new Bootstrap()
-                .group(group)
-                .channelFactory(() -> new NioDatagramChannel(InternetProtocolFamily.IPv4))
-                .localAddress(multicastAddress)
-                .option(ChannelOption.SO_REUSEADDR, true)
-                .option(ChannelOption.IP_MULTICAST_IF, NetworkUtil.getPublicInterface())
-                .option(ChannelOption.AUTO_READ, false)
-                .handler(new ChannelInitializer<NioDatagramChannel>() {
-                    @Override
-                    public void initChannel(NioDatagramChannel ch) throws Exception {
-                        ch.pipeline().addLast(new MulticastChannelAdapter(Cluster.this));
-                    }
-                });
-
-        multicastServer = (NioDatagramChannel) a.bind(multicastAddress.getPort()).sync().channel();
-        multicastServer.joinGroup(multicastAddress, NetworkUtil.getPublicInterface()).sync();
-
-        ByteBuf heartbeatBuf = Unpooled.unreleasableBuffer(Serializer.toByteBuf(new HeartbeatOperation(localMember)));
-
-        multicastServer.writeAndFlush(new DatagramPacket(heartbeatBuf, multicastAddress));
-
-        heartbeatTask = workerGroup.scheduleAtFixedRate(() -> {
-            long time = System.currentTimeMillis();
-
-            heartbeatMap.forEach((member, lastResponse) -> {
-                if (time - lastResponse > 2000) {
-//                    removeMember(member);
-                }
-            });
-
-            multicastServer.writeAndFlush(new DatagramPacket(heartbeatBuf, multicastAddress, localMember.address));
-        }, 500, 500, TimeUnit.MILLISECONDS);
-
-        services = new ArrayList<>(serviceGenerators.size()+16);
+        services = new ArrayList<>(serviceGenerators.size() + 16);
         services.add(this);
         IntStream.range(0, serviceGenerators.size())
                 .mapToObj(idx -> {
                     ServiceInitializer.Constructor c = serviceGenerators.get(idx);
-                    return c.constructor.newInstance(new ServiceContext(idx, c.name));
+                    return c.constructor.newInstance(new ServiceContext(idx + 1, c.name));
                 }).collect(Collectors.toCollection(() -> services));
 
         serviceNameMap = IntStream.range(0, serviceGenerators.size())
-                .mapToObj(idx -> new Tuple<>(serviceGenerators.get(idx).name, services.get(idx+1)))
+                .mapToObj(idx -> new Tuple<>(serviceGenerators.get(idx).name, services.get(idx + 1)))
                 .collect(Collectors.toConcurrentMap(x -> x._1, x -> x._2));
 
-        LOGGER.info("{} started listening on {}, listening UDP multicast server {}", localMember, server.localAddress(), multicastAddress);
+        scheduleClusteringTask();
         server.config().setAutoRead(true);
-        multicastServer.config().setAutoRead(true);
+        multicastServer.setAutoRead(true);
     }
 
-    public void addMember(Member member) {
-        if (!clusterConnection.contains(member)) {
+    public synchronized void addMemberInternal(Member member) {
+        if (!clusterConnection.containsKey(member) && !member.equals(localMember)) {
             LOGGER.info("Discovered new member {}", member);
 
             Channel channel;
@@ -201,17 +164,101 @@ public class Cluster implements Service {
                 LOGGER.error("Couldn't connect new server", e);
                 return;
             }
+
+            members.add(member);
             clusterConnection.put(member, channel);
-            heartbeatMap.put(member, System.currentTimeMillis());
+            if (isMaster())
+                heartbeatMap.put(member, System.currentTimeMillis());
             membershipListeners.forEach(x -> Throwables.propagate(() -> x.memberAdded(member)));
         }
     }
 
-    public void removeMember(Member member) {
-        clusterConnection.remove(member);
-        LOGGER.info("Member removed {}", member);
-        heartbeatMap.remove(member);
-        membershipListeners.forEach(l -> Throwables.propagate(() -> l.memberRemoved(member)));
+
+    private void scheduleClusteringTask() {
+
+        heartbeatTask = workerGroup.scheduleAtFixedRate(() -> {
+            long time = System.currentTimeMillis();
+
+            if (isMaster()) {
+                heartbeatMap.forEach((member, lastResponse) -> {
+                    if (time - lastResponse > 2000) {
+                        removeMemberAsMaster(member);
+                    }
+                });
+
+                multicastServer.send(new HeartbeatRequest());
+            } else {
+                if (time - lastContactedTimeMaster > 500) {
+                    workerGroup.schedule(() -> {
+                        if (time - lastContactedTimeMaster > 500) {
+                            memberState = MemberState.CANDIDATE;
+                            voteElection();
+                        }
+                    }, 150 + new Random().nextInt(150), TimeUnit.MILLISECONDS);
+                } else {
+
+                    Member localMember = getLocalMember();
+                    internalBus.send(master, (masterCluster, ctx) -> {
+                        masterCluster.heartbeatMap.put(localMember, System.currentTimeMillis());
+                    });
+                }
+            }
+
+        }, 200, 200, TimeUnit.MILLISECONDS);
+
+        workerGroup.scheduleWithFixedDelay(() -> multicastServer.send(new JoinOperation()), 0, 2000, TimeUnit.MILLISECONDS);
+    }
+
+    public void voteElection() {
+        Collection<Member> clusterMembers = getMembers();
+
+        Map<Member, Boolean> map = new ConcurrentHashMap<>();
+        CompletableFuture<Boolean> future = new CompletableFuture<>();
+        int cursor = lastVotedCursor++;
+        Map<Member, CompletableFuture<Boolean>> m = internalBus.askAllMembers((cluster, ctx) -> {
+            ctx.reply(cluster.lastVotedCursor++ == cursor - 1);
+        });
+
+        m.forEach((member, resultFuture) -> {
+            resultFuture.thenAccept(result -> {
+                map.put(member, result);
+
+                Map<Boolean, Long> stream = map.entrySet().stream()
+                        .collect(Collectors.groupingBy(Map.Entry::getValue, Collectors.counting()));
+                if (stream.getOrDefault(Boolean.TRUE, 0L) > clusterMembers.size() / 2) {
+                    future.complete(true);
+                } else if (stream.getOrDefault(Boolean.FALSE, 0L) > clusterMembers.size() / 2) {
+                    future.complete(false);
+                }
+
+            });
+        });
+
+        if (future.join()) {
+            memberState = MemberState.MASTER;
+            Member localMember = this.localMember;
+            internalBus.sendAllMembers((cluster, ctx) -> cluster.changeMaster(localMember));
+        }
+    }
+
+    private synchronized void changeMaster(Member masterMember) {
+        master = masterMember;
+    }
+
+    public void removeMemberAsMaster(Member member) {
+        if (!isMaster())
+            throw new IllegalStateException();
+
+        return;
+
+//        heartbeatMap.remove(member);
+//        members.remove(member);
+//        internalBus.sendAllMembers((cluster, ctx) -> {
+//            cluster.clusterConnection.remove(member);
+//            Cluster.LOGGER.info("Member removed {}", member);
+//            cluster.membershipListeners.forEach(l -> Throwables.propagate(() -> l.memberRemoved(member)));
+//        }, true);
+
     }
 
     private Channel connectServer(SocketAddress serverAddr) throws InterruptedException {
@@ -247,16 +294,13 @@ public class Cluster implements Service {
     }
 
     public Set<Member> getMembers() {
-        Set<Member> members = new HashSet<>(clusterConnection.keySet());
+        // replace with collections and present a view instead of creating new HashSet
+        Set<Member> members = new HashSet<>(this.members);
         members.add(localMember);
         return Collections.unmodifiableSet(members);
     }
 
     public <T extends Service> T getService(String serviceName) {
-        return (T) serviceNameMap.get(serviceName);
-    }
-
-    public <T extends Service> T getService(String serviceName, Class<T> clazz) {
         return (T) serviceNameMap.get(serviceName);
     }
 
@@ -266,13 +310,13 @@ public class Cluster implements Service {
             throw new IllegalStateException("Maximum number of allowed services is " + Short.MAX_VALUE);
         }
 
-        Request<Cluster> bytes = (service, ctx) -> {
+        Request<Cluster, Boolean> bytes = (service, ctx) -> {
             T s = ser.newInstance(new ServiceContext(size, name));
             service.services.add(s);
             service.serviceNameMap.put(name, s);
             ctx.reply(true);
         };
-        Map<Member, CompletableFuture<Result>> m = internalBus.askAllMembers(bytes, true);
+        Map<Member, CompletableFuture<Boolean>> m = internalBus.askAllMembers(bytes, true);
 
         CountDownLatch latch = new CountDownLatch(m.size());
 
@@ -282,12 +326,13 @@ public class Cluster implements Service {
         return (T) serviceNameMap.get(name);
     }
 
-    private void tryUntilDone(CountDownLatch latch, Member member, CompletableFuture<Result> future, Object message) {
-        future.thenAccept(x -> {
-            if (x.isFailed())
-                tryUntilDone(latch, member, internalBus.ask(member, message), message);
-            else
+    private void tryUntilDone(CountDownLatch latch, Member member, CompletableFuture<Boolean> future, Request req) {
+        future.whenComplete((x, ex) -> {
+            if (ex == null) {
+                tryUntilDone(latch, member, internalBus.ask(member, req), req);
+            } else {
                 latch.countDown();
+            }
         });
     }
 
@@ -313,17 +358,15 @@ public class Cluster implements Service {
     public void sendAllMembersInternal(Object bytes, int service) {
         clusterConnection.forEach((member, conn) -> {
             if (!member.equals(localMember)) {
-                LOGGER.debug("member {} ", member);
                 sendInternal(conn, bytes, service);
             }
         });
     }
 
-    public Map<Member, CompletableFuture<Result>> askAllMembersInternal(Object bytes, int service) {
-        Map<Member, CompletableFuture<Result>> map = new ConcurrentHashMap<>();
+    public <R> Map<Member, CompletableFuture<R>> askAllMembersInternal(Object bytes, int service) {
+        Map<Member, CompletableFuture<R>> map = new ConcurrentHashMap<>();
         clusterConnection.forEach((member, conn) -> {
             if (!member.equals(localMember)) {
-                LOGGER.debug("member {} ", member);
                 map.put(member, askInternal(conn, bytes, service));
             }
         });
@@ -334,8 +377,7 @@ public class Cluster implements Service {
         for (Channel entry : clusterConnection.values()) {
             entry.close().sync();
         }
-        multicastServer.leaveGroup(multicastAddress, NetUtil.LOOPBACK_IF).sync();
-        multicastServer.close().sync();
+        multicastServer.close();
         server.close().sync();
         heartbeatTask.cancel(true);
         services.forEach(s -> s.onClose());
@@ -347,8 +389,8 @@ public class Cluster implements Service {
         channel.writeAndFlush(message);
     }
 
-    public CompletableFuture<Result> askInternal(Channel channel, Object obj, int service) {
-        CompletableFuture<Result> future = new CompletableFuture<>();
+    public <R> CompletableFuture<R> askInternal(Channel channel, Object obj, int service) {
+        CompletableFuture future = new CompletableFuture<>();
 
         int andIncrement = messageSequence.getAndIncrement();
         Packet message = new Packet(andIncrement, obj, service);
@@ -361,6 +403,9 @@ public class Cluster implements Service {
     private Channel getConnection(Member member) {
         Channel channel = clusterConnection.get(member);
         if (channel == null) {
+            if(!members.contains(member))
+                throw new IllegalArgumentException("the member doesn't exist in the cluster");
+
             Channel created;
             try {
                 created = connectServer(member.address);
@@ -368,7 +413,9 @@ public class Cluster implements Service {
                 e.printStackTrace();
                 return null;
             }
-            clusterConnection.put(member, created);
+            synchronized (this) {
+                clusterConnection.put(member, created);
+            }
             return created;
         }
         return channel;
@@ -386,17 +433,51 @@ public class Cluster implements Service {
         return Collections.unmodifiableList(services);
     }
 
-    public static class HeartbeatOperation extends InternalRequest {
-        public HeartbeatOperation(Member me) {
-            sender = me;
-        }
+    public static class HeartbeatRequest implements Operation<Cluster> {
 
         @Override
         public void run(Cluster cluster, OperationContext ctx) {
-            if (cluster.heartbeatMap.containsKey(sender)) {
-                cluster.heartbeatMap.put(sender, System.currentTimeMillis());
+            Member sender = ctx.getSender();
+            Member masterMember = cluster.getMaster();
+            if (sender.equals(masterMember)) {
+                cluster.lastContactedTimeMaster = System.currentTimeMillis();
             } else {
-                cluster.addMember(sender);
+                if (!cluster.getMembers().contains(sender)) {
+//                    CompletableFuture<HashMap> ask = cluster.internalBus.ask(sender, (service, ctx0) -> {
+//                        long runningTime = service.clusterStartTime;
+//                        HashMap map = new HashMap();
+//                        map.put("members", service.getMembers());
+//                        map.put("runningTime", runningTime);
+//                        map.put("master", service.master);
+//                        ctx0.reply(map);
+//                    });
+//
+//                    ask.thenAccept(data -> {
+//                        int myClusterSize = cluster.getMembers().size() - 1;
+//                        Set<Member> otherMembers = (Set<Member>) data.get("members");
+//                        int otherClusterSize = otherMembers.size();
+//                        if (otherMembers.contains(cluster.getLocalMember()))
+//                            otherClusterSize--;
+//
+//                        boolean canJoin = otherClusterSize > myClusterSize;
+//
+//                        if (otherClusterSize == myClusterSize) {
+//                            long myRunningTime = System.currentTimeMillis() - cluster.clusterStartTime;
+//                            canJoin |= (Long) data.get("runningTime") < myRunningTime;
+//                        }
+//
+//                        if (canJoin) {
+//                            cluster.master = (Member) data.get("master");
+//                        }
+//
+//                        otherMembers.forEach(cluster::addMemberInternal);
+//
+//                    });
+
+
+                } else {
+
+                }
             }
         }
     }
@@ -446,7 +527,7 @@ public class Cluster implements Service {
         }
     }
 
-    public static abstract class InternalRequest implements Request<Cluster> {
+    public static abstract class InternalRequest implements Request<Cluster, Object> {
         public Member sender;
     }
 
@@ -477,16 +558,45 @@ public class Cluster implements Service {
             }
         }
 
-        public void send(Member server, Request<T> request) {
-            sendInternal(getConnection(server), request, service);
+        public <R> void send(Member server, Request<T, R> request) {
+            if(server.equals(localMember)) {
+                CompletableFuture<R> f = new CompletableFuture<>();
+                Service s = services.get(service);
+                LocalOperationContext ctx = new LocalOperationContext(f, localMember);
+                workerGroup.execute(() -> s.handle(ctx, request));
+            }else {
+                sendInternal(getConnection(server), request, service);
+            }
         }
 
         public void sendAllMembers(Object bytes) {
-            sendAllMembersInternal(bytes, service);
+            sendAllMembers(bytes, false);
         }
 
-        public void sendAllMembers(Request<T> bytes) {
+        public <R> void sendAllMembers(Request<T, R> bytes) {
+            sendAllMembers(bytes, false);
+        }
+
+        public <R> void sendAllMembers(Object bytes, boolean includeThisMember) {
             sendAllMembersInternal(bytes, service);
+
+            if (includeThisMember) {
+                CompletableFuture<R> f = new CompletableFuture<>();
+                Service s = services.get(service);
+                LocalOperationContext ctx = new LocalOperationContext(f, localMember);
+                workerGroup.execute(() -> s.handle(ctx, bytes));
+            }
+        }
+
+        public <R> void sendAllMembers(Request<T, R> bytes, boolean includeThisMember) {
+            sendAllMembersInternal(bytes, service);
+
+            if (includeThisMember) {
+                CompletableFuture<R> f = new CompletableFuture<>();
+                Service s = services.get(service);
+                LocalOperationContext ctx = new LocalOperationContext(f, localMember);
+                workerGroup.execute(() -> s.handle(ctx, bytes));
+            }
         }
 
         public int serviceId() {
@@ -497,9 +607,9 @@ public class Cluster implements Service {
             return serviceName;
         }
 
-        public CompletableFuture<Result> ask(Member server, Object bytes) {
+        public <R> CompletableFuture<R> ask(Member server, Object bytes) {
             if (server.equals(localMember)) {
-                CompletableFuture<Result> future = new CompletableFuture<>();
+                CompletableFuture<R> future = new CompletableFuture<>();
                 LocalOperationContext ctx1 = new LocalOperationContext(future, localMember);
                 // move to an executor handler
                 services.get(service).handle(ctx1, bytes);
@@ -509,9 +619,9 @@ public class Cluster implements Service {
             }
         }
 
-        public CompletableFuture<Result> ask(Member server, Request<T> request) {
+        public <R> CompletableFuture<R> ask(Member server, Request<T, R> request) {
             if (server.equals(localMember)) {
-                CompletableFuture<Result> future = new CompletableFuture<>();
+                CompletableFuture<R> future = new CompletableFuture<>();
                 LocalOperationContext ctx1 = new LocalOperationContext(future, localMember);
                 request.run((T) services.get(service), ctx1);
                 return future;
@@ -520,15 +630,19 @@ public class Cluster implements Service {
             }
         }
 
-        public Map<Member, CompletableFuture<Result>> askAllMembers(Object bytes) {
+        public <R> CompletableFuture<R> ask(Member server, Request<T, R> request, Class<R> clazz) {
+            return ask(server, request);
+        }
+
+        public <R> Map<Member, CompletableFuture<R>> askAllMembers(Object bytes) {
             return askAllMembersInternal(bytes, service);
         }
 
-        public Map<Member, CompletableFuture<Result>> askAllMembers(Request<T> bytes, boolean includeThisMember) {
-            Map<Member, CompletableFuture<Result>> m = askAllMembersInternal(bytes, service);
+        public <R> Map<Member, CompletableFuture<R>> askAllMembers(Request<T, R> bytes, boolean includeThisMember) {
+            Map<Member, CompletableFuture<R>> m = askAllMembersInternal(bytes, service);
 
-            if(includeThisMember) {
-                CompletableFuture<Result> f = new CompletableFuture<>();
+            if (includeThisMember) {
+                CompletableFuture<R> f = new CompletableFuture<>();
                 Service s = services.get(service);
                 LocalOperationContext ctx = new LocalOperationContext(f, localMember);
                 workerGroup.execute(() -> s.handle(ctx, bytes));
@@ -538,11 +652,11 @@ public class Cluster implements Service {
             return m;
         }
 
-        public Map<Member, CompletableFuture<Result>> askAllMembers(Object bytes, boolean includeThisMember) {
-            Map<Member, CompletableFuture<Result>> m = askAllMembersInternal(bytes, service);
+        public <R> Map<Member, CompletableFuture<R>> askAllMembers(Object bytes, boolean includeThisMember) {
+            Map<Member, CompletableFuture<R>> m = askAllMembersInternal(bytes, service);
 
-            if(includeThisMember) {
-                CompletableFuture<Result> f = new CompletableFuture<>();
+            if (includeThisMember) {
+                CompletableFuture<R> f = new CompletableFuture<>();
                 Service s = services.get(service);
                 LocalOperationContext ctx = new LocalOperationContext(f, localMember);
                 workerGroup.execute(() -> s.handle(ctx, bytes));
@@ -551,7 +665,7 @@ public class Cluster implements Service {
             return m;
         }
 
-        public Map<Member, CompletableFuture<Result>> askAllMembers(Request<T> bytes) {
+        public <R> Map<Member, CompletableFuture<R>> askAllMembers(Request<T, R> bytes) {
             return askAllMembers(bytes, true);
         }
 
@@ -562,5 +676,59 @@ public class Cluster implements Service {
         public long startTime() {
             return clusterStartTime;
         }
+
+    }
+
+    public static class JoinOperation implements Operation<Cluster> {
+
+        @Override
+        public void run(Cluster cluster, OperationContext<Void> ctx) {
+            Member sender = ctx.getSender();
+            if (cluster.getMembers().contains(sender))
+                return;
+
+            Member masterMember = cluster.getMaster();
+            cluster.internalBus.send(masterMember, (masterCluster, ctx0) -> {
+                Integer val = masterCluster.pendingUserVotes.merge(sender, 1, Integer::sum);
+                if (val > masterCluster.getMembers().size()) {
+                    masterCluster.addMemberInternal(sender);
+                    long clusterStartTime = masterCluster.clusterStartTime;
+                    Set<Member> members = new HashSet(masterCluster.getMembers());
+                    members.remove(sender);
+                    CompletableFuture<Object> ask = masterCluster.internalBus
+                            .ask(sender, (newNode, ctx1) -> {
+                                if (newNode.members.size() < members.size() || newNode.clusterStartTime > clusterStartTime) {
+                                    newNode.changeCluster(members, masterMember);
+                                } else {
+                                    // eventually they will change the role and the other branch will be executed.
+                                }
+                            });
+
+                    ask.thenAccept(v -> {
+                        masterCluster.internalBus.askAllMembers((aMemberInCluster, ctx1) -> {
+                            aMemberInCluster.addMemberInternal(sender);
+                        });
+                    });
+                }
+            });
+        }
+    }
+
+    private synchronized void changeCluster(Set<Member> newClusterMembers, Member masterMember) {
+        try {
+            pause();
+            clusterConnection.clear();
+            master = masterMember;
+            members = newClusterMembers;
+            messageHandlers.cleanUp();
+            LOGGER.info("Joined a cluster of {} nodes.", members.size());
+            membershipListeners.forEach(x -> Throwables.propagate(() -> x.clusterChanged()));
+        }  finally {
+            resume();
+        }
+    }
+
+    public static enum MemberState {
+        FOLLOWER, CANDIDATE, MASTER
     }
 }

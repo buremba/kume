@@ -5,18 +5,18 @@ import java.util.concurrent.CompletableFuture;
 /**
  * Created by buremba <Burak Emre Kabakcı> on 10/12/14 23:05.
  */
-public class LocalOperationContext implements OperationContext {
-    private final CompletableFuture<Result> callback;
+public class LocalOperationContext<R> implements OperationContext<R> {
+    private final CompletableFuture<R> callback;
     private final Member member;
 
-    public LocalOperationContext(CompletableFuture<Result> callback, Member localMember) {
+    public LocalOperationContext(CompletableFuture<R> callback, Member localMember) {
         this.callback = callback;
         this.member = localMember;
     }
 
     @Override
-    public void reply(Object obj) {
-        callback.complete(new Result(obj));
+    public void reply(R obj) {
+        callback.complete(obj);
     }
 
     @Override

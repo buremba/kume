@@ -6,7 +6,7 @@ import org.rakam.kume.Request;
 /**
 * Created by buremba <Burak Emre Kabakcı> on 19/12/14 04:10.
 */
-class GetRequest implements Request<RingMap> {
+class GetRequest<V> implements Request<RingMap, V> {
     private RingMap ringMap;
     private final String key;
 
