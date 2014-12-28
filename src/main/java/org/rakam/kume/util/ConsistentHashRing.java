@@ -5,6 +5,7 @@ import com.google.common.collect.Sets;
 import com.google.common.hash.HashFunction;
 import com.google.common.hash.Hashing;
 import org.rakam.kume.Member;
+import org.rakam.kume.transport.serialization.Serializer;
 
 import java.nio.charset.Charset;
 import java.util.ArrayList;
@@ -127,6 +128,19 @@ public class ConsistentHashRing {
 
     public static long hash(String hash) {
         return hashFunction.hashString(hash, Charset.forName("UTF-8")).asLong();
+    }
+
+    public static long hash(Object hash) {
+        // TODO: man, it's ugly. we should find a nice way to fix this problem. maybe strategy pattern?
+
+        if(hash instanceof String)
+            return hash((String) hash);
+        if(hash instanceof Long)
+            return hash((long) hash);
+        if(hash instanceof Integer)
+            return hash((int) hash);
+        else
+            return hashFunction.hashBytes(Serializer.toByteArray(hash)).asLong();
     }
 
     public static long hash(byte[] hash) {

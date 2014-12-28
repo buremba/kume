@@ -45,6 +45,7 @@ import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -69,7 +70,7 @@ public class Cluster implements Service {
             .expireAfterWrite(105, TimeUnit.SECONDS)
             .removalListener((RemovalNotification<Integer, CompletableFuture<Object>> notification) -> {
                 if (!notification.getCause().equals(RemovalCause.EXPLICIT))
-                    notification.getValue().cancel(false);
+                    notification.getValue().completeExceptionally(new TimeoutException());
             }).build();
     final private Member localMember;
     final private MulticastServerHandler multicastServer;
@@ -84,7 +85,7 @@ public class Cluster implements Service {
     final private Map<Member, Long> heartbeatMap = new ConcurrentHashMap<>();
     final private long clusterStartTime;
     private ScheduledFuture<?> heartbeatTask;
-    private ConcurrentMap<Member, Integer> pendingUserVotes = CacheBuilder.newBuilder().expireAfterWrite(100, TimeUnit.SECONDS).<Member, Integer>build().asMap();
+    private ConcurrentMap<InetSocketAddress, Integer> pendingUserVotes = CacheBuilder.newBuilder().expireAfterWrite(100, TimeUnit.SECONDS).<InetSocketAddress, Integer>build().asMap();
     private MemberState memberState;
 
     public Cluster(Collection<Member> members, ServiceInitializer serviceGenerators, InetSocketAddress serverAddress) throws InterruptedException {
@@ -141,7 +142,8 @@ public class Cluster implements Service {
         IntStream.range(0, serviceGenerators.size())
                 .mapToObj(idx -> {
                     ServiceInitializer.Constructor c = serviceGenerators.get(idx);
-                    return c.constructor.newInstance(new ServiceContext(idx + 1, c.name));
+                    ServiceContext bus = new ServiceContext(idx + 1, c.name);
+                    return c.constructor.newInstance(bus);
                 }).collect(Collectors.toCollection(() -> services));
 
         serviceNameMap = IntStream.range(0, serviceGenerators.size())
@@ -175,7 +177,6 @@ public class Cluster implements Service {
 
 
     private void scheduleClusteringTask() {
-
         heartbeatTask = workerGroup.scheduleAtFixedRate(() -> {
             long time = System.currentTimeMillis();
 
@@ -186,7 +187,7 @@ public class Cluster implements Service {
                     }
                 });
 
-                multicastServer.send(new HeartbeatRequest());
+                multicastServer.sendMulticast(new HeartbeatRequest());
             } else {
                 if (time - lastContactedTimeMaster > 500) {
                     workerGroup.schedule(() -> {
@@ -206,7 +207,7 @@ public class Cluster implements Service {
 
         }, 200, 200, TimeUnit.MILLISECONDS);
 
-        workerGroup.scheduleWithFixedDelay(() -> multicastServer.send(new JoinOperation()), 0, 2000, TimeUnit.MILLISECONDS);
+        workerGroup.scheduleWithFixedDelay(() -> multicastServer.sendMulticast(new JoinOperation()), 0, 2000, TimeUnit.MILLISECONDS);
     }
 
     public void voteElection() {
@@ -482,55 +483,6 @@ public class Cluster implements Service {
         }
     }
 
-    public static class AddMemberRequest extends InternalRequest {
-        Member member;
-
-        public AddMemberRequest(Member member, Member sender) {
-            this.member = member;
-            this.sender = sender;
-        }
-
-        public void run(Cluster cluster, OperationContext ctx) {
-
-
-//            if (cluster.isMaster()) {
-//                AtomicInteger positive = new AtomicInteger();
-//                AtomicInteger negative = new AtomicInteger();
-//                final int quorum = cluster.clusterMembers.size() / 2;
-//
-//                if (quorum == 0) {
-//                    cluster.clusterMembers.add(member);
-//                    cluster.membershipListeners.forEach(x -> x.memberAdded(member));
-//
-//                    if (member.getId().compareTo(cluster.localMember.getId()) > 0) {
-//                        cluster.master = member;
-//                    } else {
-//                        cluster.master = cluster.localMember;
-//                    }
-//                }
-//                cluster.sendAllMembers(new AddMemberRequest(member, cluster.localMember)).values()
-//                        .forEach(future -> future.thenAccept(result -> {
-//                            if (result.isSucceeded()) {
-//                                if (result.data.equals(Boolean.TRUE))
-//                                    positive.incrementAndGet();
-//                                else
-//                                    negative.incrementAndGet();
-//                            }
-//
-//                            if (positive.get() > quorum) {
-//                                System.out.println("ok");
-//                            } else if (negative.get() > quorum) {
-//                                System.out.println("yok");
-//                            }
-//                        }));
-//            }
-        }
-    }
-
-    public static abstract class InternalRequest implements Request<Cluster, Object> {
-        public Member sender;
-    }
-
     public void pause() {
         server.config().setAutoRead(false);
     }
@@ -546,6 +498,7 @@ public class Cluster implements Service {
         public ServiceContext(int service, String serviceName) {
             this.service = service;
             this.serviceName = serviceName;
+
         }
 
         public void send(Member server, Object bytes) {
@@ -677,6 +630,30 @@ public class Cluster implements Service {
             return clusterStartTime;
         }
 
+        private <R> void tryAskUntilDone(Member member, Request<?, R> req, int numberOfTimes, CompletableFuture<R> future) {
+            CompletableFuture<R> ask = ask(member, req);
+            ask.whenComplete((val, ex) -> {
+                if (ex != null)
+                    if (ex instanceof TimeoutException) {
+                        if (numberOfTimes == 0) {
+                            future.completeExceptionally(new TimeoutException());
+                        } else {
+                            tryAskUntilDone(member, req, numberOfTimes, future);
+                        }
+                    } else {
+                        future.completeExceptionally(ex);
+                    }
+                else
+                    future.complete(val);
+            });
+        }
+
+        public <R> CompletableFuture<R> tryAskUntilDone(Member member, Request<?, R> req, int numberOfTimes) {
+            CompletableFuture<R> f = new CompletableFuture<>();
+            tryAskUntilDone(member, req, numberOfTimes, f);
+            return f;
+        }
+
     }
 
     public static class JoinOperation implements Operation<Cluster> {
@@ -689,16 +666,17 @@ public class Cluster implements Service {
 
             Member masterMember = cluster.getMaster();
             cluster.internalBus.send(masterMember, (masterCluster, ctx0) -> {
-                Integer val = masterCluster.pendingUserVotes.merge(sender, 1, Integer::sum);
+                Integer val = masterCluster.pendingUserVotes.merge(sender.address, 1, Integer::sum);
                 if (val > masterCluster.getMembers().size()) {
-                    masterCluster.addMemberInternal(sender);
                     long clusterStartTime = masterCluster.clusterStartTime;
-                    Set<Member> members = new HashSet(masterCluster.getMembers());
-                    members.remove(sender);
+                    Set<Member> myMembers = masterCluster.getMembers();
+                    masterCluster.multicastServer.send(sender.getAddress(), (service, ctx1) ->
+                            service.multicastServer.send(ctx1.getSender().address, new MergeClusterRequest(service.getMembers())));
                     CompletableFuture<Object> ask = masterCluster.internalBus
                             .ask(sender, (newNode, ctx1) -> {
-                                if (newNode.members.size() < members.size() || newNode.clusterStartTime > clusterStartTime) {
-                                    newNode.changeCluster(members, masterMember);
+                                if (newNode.members.size() < myMembers.size() || newNode.clusterStartTime > clusterStartTime) {
+                                    newNode.changeCluster(myMembers, masterMember);
+//                                    newNode.addMemberInternal(masterMember);
                                 } else {
                                     // eventually they will change the role and the other branch will be executed.
                                 }
@@ -711,6 +689,44 @@ public class Cluster implements Service {
                     });
                 }
             });
+        }
+
+        private static class ClusterChangeRequest implements Request<Cluster, Boolean> {
+            private final Set<Member> members;
+            private final Member masterMember;
+
+            public ClusterChangeRequest(Set<Member> members, Member masterMember) {
+                this.members = members;
+                this.masterMember = masterMember;
+            }
+
+            @Override
+            public void run(Cluster service, OperationContext<Boolean> ctx) {
+                service.changeCluster(members, masterMember);
+                ctx.reply(true);
+            }
+        }
+
+        private static class MergeClusterRequest implements Operation<Cluster> {
+            private final Set<Member> otherMembers;
+
+            public MergeClusterRequest(Set<Member> otherMembers) {
+                this.otherMembers = otherMembers;
+            }
+
+            @Override
+            public void run(Cluster service, OperationContext<Void> ctx) {
+
+                Set<Member> myMembers = service.getMembers();
+                long count = otherMembers.stream().filter(x -> service.pendingUserVotes.getOrDefault(x, 0) > myMembers.size()).count();
+                if(count > otherMembers.size()/2) {
+                    for (Member member : otherMembers) {
+                        service.addMemberInternal(member);
+                        service.internalBus
+                                .ask(member, new ClusterChangeRequest(myMembers, service.getLocalMember()));
+                    }
+                }
+            }
         }
     }
 

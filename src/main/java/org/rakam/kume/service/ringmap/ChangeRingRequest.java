@@ -13,6 +13,7 @@ import java.util.Map;
 
 import static java.util.Map.Entry;
 import static org.rakam.kume.util.ConsistentHashRing.TokenRange;
+import static org.rakam.kume.util.ConsistentHashRing.hash;
 import static org.rakam.kume.util.ConsistentHashRing.isTokenBetween;
 
 /**
@@ -32,7 +33,7 @@ class ChangeRingRequest<K, V> implements Request<RingMap, Map<K, V>> {
     @Override
     public void run(RingMap service, OperationContext ctx) {
         synchronized (service.ctx) {
-            Map moveEntries = new HashMap<>();
+            Map<K, V> moveEntries = new HashMap<>();
 
             ConsistentHashRing serviceRing = service.getRing();
             int startBucket = serviceRing.findBucketIdFromToken(queryStartToken);
@@ -42,17 +43,19 @@ class ChangeRingRequest<K, V> implements Request<RingMap, Map<K, V>> {
 
             for (int bckIdz = startBucket; bckIdz <= loopEnd; bckIdz++) {
                 int bckId = bckIdz % serviceRing.getBucketCount();
-                Map partition = service.getPartition(bckId);
+                Map<K, V> partition = service.getPartition(bckId);
                 if (partition != null) {
+                    long endToken = serviceRing.getBucket(bckId + 1).token-1;
+                    long startToken = serviceRing.getBucket(bckId).token;
 
-                    int i = bckId + 1;
-                    long token = serviceRing.getBucket(i).token-1;
-                    if (i == serviceRing.getBucketCount() ? token >= queryEndToken : token <= queryEndToken && bckId > startBucket) {
+                    boolean partitionBetweenToken = isTokenBetween(startToken, queryStartToken, queryStartToken);
+                    partitionBetweenToken &= isTokenBetween(endToken, queryStartToken, queryStartToken);
+
+                    if (partitionBetweenToken) {
                         moveEntries.putAll(partition);
                     } else {
                         partition.forEach((key, value) -> {
-                            long hash = serviceRing.hash(Serializer.toByteArray(key));
-                            if (isTokenBetween(hash, queryStartToken, queryEndToken)) {
+                            if (isTokenBetween(hash(key), queryStartToken, queryEndToken)) {
                                 moveEntries.put(key, value);
                             }
                         });
@@ -74,10 +77,10 @@ class ChangeRingRequest<K, V> implements Request<RingMap, Map<K, V>> {
                             moveEntries.putAll(map);
                             it.remove();
                         } else if (startTokenIn || endTokenIn) {
-                            Iterator<Entry> iterator = map.entrySet().iterator();
+                            Iterator<Entry<K, V>> iterator = map.entrySet().iterator();
                             while (iterator.hasNext()) {
-                                Entry n = iterator.next();
-                                long entryToken = serviceRing.hash(Serializer.toByteArray(n.getKey()));
+                                Entry<K, V> n = iterator.next();
+                                long entryToken = hash(Serializer.toByteArray(n.getKey()));
                                 if (isTokenBetween(entryToken, queryStartToken, queryEndToken)) {
                                     moveEntries.put(n.getKey(), n.getValue());
                                     iterator.remove();

@@ -55,7 +55,11 @@ public class MulticastServerHandler {
         server.config().setAutoRead(bool);
     }
 
-    public void send(Operation req) {
+    public void sendMulticast(Operation req) {
+        ByteBuf buf = Unpooled.wrappedBuffer(Serializer.toByteBuf(new MulticastPacket(req, localMember)));
+        server.writeAndFlush(new DatagramPacket(buf, address, localMember.address));
+    }
+    public void send(InetSocketAddress address, Operation<Cluster> req) {
         ByteBuf buf = Unpooled.wrappedBuffer(Serializer.toByteBuf(new MulticastPacket(req, localMember)));
         server.writeAndFlush(new DatagramPacket(buf, address, localMember.address));
     }

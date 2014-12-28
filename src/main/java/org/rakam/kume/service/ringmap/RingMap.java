@@ -7,7 +7,6 @@ import org.rakam.kume.MigrationListener;
 import org.rakam.kume.OperationContext;
 import org.rakam.kume.Request;
 import org.rakam.kume.service.PausableService;
-import org.rakam.kume.transport.serialization.Serializer;
 import org.rakam.kume.util.ConsistentHashRing;
 import org.rakam.kume.util.Throwables;
 import org.slf4j.Logger;
@@ -142,18 +141,6 @@ public class RingMap<K, V> extends PausableService implements MembershipListener
 
     }
 
-    public long generateHashForKey(Object key) {
-        // i think that it's a bit ugly
-        // but we should not use serializer for simple data structures
-        // like String, Long, Integer in order to get better performance.
-
-        // maybe we can use a field that holds serializer for K.
-        if(key instanceof String) {
-            return hash((String) key);
-        }
-        return hash(Serializer.toByteArray(key));
-    }
-
     private CompletableFuture<Void> changeRing(ConsistentHashRing newRing) {
         ConsistentHashRing oldRing = ring;
         ConcurrentHashMap<K, V>[] newMap = createEmptyMap(newRing);
@@ -206,7 +193,7 @@ public class RingMap<K, V> extends PausableService implements MembershipListener
                                     newMap[Arrays.binarySearch(newBucketIds, startBucket)].putAll(data);
                                 } else {
                                     data.forEach((key, value) -> {
-                                        int i = Arrays.binarySearch(newBucketIds, newRing.findBucketIdFromToken(generateHashForKey(key)));
+                                        int i = Arrays.binarySearch(newBucketIds, newRing.findBucketIdFromToken(hash(key)));
                                         if (i >= 0) {
                                             Map<K, V> partition = newMap[i];
                                             partition.put(key, value);
@@ -271,14 +258,13 @@ public class RingMap<K, V> extends PausableService implements MembershipListener
     }
 
     @Override
-    public synchronized void clusterChanged() {
-        if (isPaused()) {
-            addQueueIfPaused(() -> clusterChanged());
-        } else {
-            Member masterMember = ctx.getCluster().getMaster();
-            ConsistentHashRing ring = ctx.ask(masterMember, (service, ctx) -> service.getRing(), ConsistentHashRing.class).join();
-            changeRing(ring);
-        }
+    public void clusterMerged(Set<Member> newMembers) {
+
+    }
+
+    @Override
+    public void clusterChanged() {
+
     }
 
     @Override
@@ -290,7 +276,7 @@ public class RingMap<K, V> extends PausableService implements MembershipListener
         Map<Member, List<Entry>> m = new HashMap<>();
 
         for (Entry entry : fromMap.entrySet()) {
-            for (Member member : ring.findBucketFromToken(generateHashForKey(entry.getKey())).members) {
+            for (Member member : ring.findBucketFromToken(hash(entry.getKey())).members) {
                 m.getOrDefault(member, new ArrayList()).add(entry);
             }
         }
@@ -304,7 +290,7 @@ public class RingMap<K, V> extends PausableService implements MembershipListener
     }
 
     public CompletableFuture<Void> put(K key, V val) {
-        int bucketId = ring.findBucketIdFromToken(generateHashForKey(key));
+        int bucketId = ring.findBucketIdFromToken(hash(key));
         ConsistentHashRing.Bucket bucket = ring.getBucket(bucketId);
 
         CompletableFuture<Void>[] stages = new CompletableFuture[bucket.members.size()];
@@ -386,6 +372,10 @@ public class RingMap<K, V> extends PausableService implements MembershipListener
         return ring;
     }
 
+    public int getReplicationFactor() {
+        return replicationFactor;
+    }
+
     public void listenMigrations(MigrationListener migrationListener) {
         migrationListeners.add(migrationListener);
     }
@@ -406,7 +396,7 @@ public class RingMap<K, V> extends PausableService implements MembershipListener
     }
 
     void putLocal(K key, V value) {
-        Map<K, V> partition = getPartition(ring.findBucketIdFromToken(generateHashForKey(key)));
+        Map<K, V> partition = getPartition(ring.findBucketIdFromToken(hash(key)));
         if (partition == null) {
             LOGGER.error("Discarded put request for key {} because node doesn't own that token.", key);
         } else {

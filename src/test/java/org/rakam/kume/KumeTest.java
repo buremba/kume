@@ -43,7 +43,7 @@ public class KumeTest {
             }
 
             @Override
-            public void clusterChanged() {
+            public void clusterMerged() {
 
             }
         });
@@ -65,7 +65,7 @@ public class KumeTest {
             }
 
             @Override
-            public void clusterChanged() {
+            public void clusterMerged() {
 
             }
         });

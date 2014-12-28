@@ -45,6 +45,10 @@ public class GCounter implements KryoSerializable {
         return new GCounter(max);
     }
 
+    public static long combine(long first, long second) {
+        return max(first, second);
+    }
+
     @Override
     public void write(Kryo kryo, Output output) {
         output.writeLong(counter.longValue(), true);

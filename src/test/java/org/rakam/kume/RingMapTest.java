@@ -40,6 +40,7 @@ public class RingMapTest extends KumeTest {
             ringMap0.put("test" + System.currentTimeMillis() + i, i).get();
         }
         ringMap0.logOwnedBuckets();
+
     }
 
     @Test
