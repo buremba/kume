@@ -19,9 +19,5 @@ public interface Service {
         request.run(this, ctx);
     }
 
-    default void onClose() {
-    }
-
-    default void destroy() {
-    }
+    void onClose();
 }

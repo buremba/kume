@@ -1,4 +1,4 @@
-package org.rakam.kume.service.crdt.gcounter;
+package org.rakam.kume.service.crdt.gset;
 
 import org.rakam.kume.Cluster;
 import org.rakam.kume.Member;
@@ -8,6 +8,7 @@ import org.rakam.kume.Request;
 import org.rakam.kume.service.Service;
 import org.rakam.kume.util.ConsistentHashRing;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -19,19 +20,19 @@ import java.util.stream.Stream;
 import static com.google.common.base.Preconditions.checkArgument;
 
 /**
- * Created by buremba <Burak Emre Kabakcı> on 19/12/14 04:25.
+ * Created by buremba <Burak Emre Kabakcı> on 28/12/14 21:26.
  */
-public class GCounterService implements MembershipListener, Service {
+public class GSetService<T> implements Service, MembershipListener {
     final int replicationFactor;
-    private final Cluster.ServiceContext<GCounterService> ctx;
+    private final Cluster.ServiceContext<GSetService> ctx;
     private List<Member> ownedMembers;
     // ringStore is used for sharing the ring between services in the same cluster.
-    // we could store the ring as instance field but it would take more space since each GCounterService will have its own ring.
+    // we could store the ring as instance field but it would take more space since each GSetService will have its own ring.
     // since there may be multiple cluster that lives on same jvm instance, we use a map to store the ring for each cluster.
     private static Map<Cluster, ConsistentHashRing> ringStore = new ConcurrentHashMap<>();
-    GCounter counter;
+    GSet<T> set;
 
-    public GCounterService(Cluster.ServiceContext<GCounterService> clusterContext, int replicationFactor) {
+    public GSetService(Cluster.ServiceContext<GSetService> clusterContext, int replicationFactor) {
         this.replicationFactor = replicationFactor;
         ctx = clusterContext;
         Cluster cluster = ctx.getCluster();
@@ -40,7 +41,7 @@ public class GCounterService implements MembershipListener, Service {
         ConsistentHashRing ring = ringStore.computeIfAbsent(ctx.getCluster(),
                 k -> new ConsistentHashRing(cluster.getMembers(), 1, replicationFactor));
         arrangePartitions(ring);
-        counter = new GCounter();
+        set = new GSet();
         ownedMembers = ring.findBucket(ctx.serviceName()).members;
     }
 
@@ -50,38 +51,47 @@ public class GCounterService implements MembershipListener, Service {
         Member localMember = ctx.getCluster().getLocalMember();
 
         if (oldOwnedMembers.contains(localMember) && !ownedMembers.contains(localMember)) {
-            long counterValue = counter.get();
-            counter = null;
-            Stream<CompletableFuture<Long>> stream = ownedMembers.stream()
-                    .map(member -> ctx.tryAskUntilDone(member, new MergeRequest(counterValue), 5));
+            GSet setValue = set;
+            set = null;
+            Stream<CompletableFuture<GSet>> stream = ownedMembers.stream()
+                    .map(member -> ctx.tryAskUntilDone(member, new MergeRequest(setValue), 5));
         } else if (!oldOwnedMembers.contains(localMember) && ownedMembers.contains(localMember)) {
-            // find a way to wait for the counter from other replicas before serving the requests.
-            // we may use PausableService but it comes with a big overhead per GCounterService because of the queues in PausableService.
-            // TODO: use reentrant lock (overhead?) or use one request queue for all GCounter in same cluster
+            // find a way to wait for the cluster from other replicas before serving the requests.
+            // we may use PausableService but it comes with a big overhead per GSetService because of the queues in PausableService.
+            // TODO: use reentrant lock (overhead?) or use one request queue for all GSet in same cluster
         }
-    }
-
-    public void increment() {
-        ownedMembers.forEach(member -> ctx.send(member, (service, ctx) -> service.counter.increment()));
     }
 
     public void add(long l) {
         checkArgument(l > 0, "value (%s) must be a positive integer", l);
-        ownedMembers.forEach(member -> ctx.send(member, (service, ctx) -> service.counter.add(l)));
+        ownedMembers.forEach(member -> ctx.send(member, (service, ctx) -> service.set.add(l)));
     }
 
 
-    public CompletableFuture<Long> syncAndGet() {
-        AtomicReference<Long> c = new AtomicReference<>();
-        CompletableFuture<GCounter>[] map = ownedMembers.stream()
-                .map(member -> ctx.ask(member, (service, ctx) -> service.get(), Long.class)
-                        .thenAccept(x -> c.getAndAccumulate(x, GCounter::combine))).toArray(CompletableFuture[]::new);
+    public CompletableFuture<GSet> syncAndGet() {
+        AtomicReference<GSet> c = new AtomicReference<>();
+        CompletableFuture<GSet>[] map = ownedMembers.stream()
+                .map(member -> ctx.ask(member, (service, ctx) -> service.getLocal(), GSet.class)
+                        .thenAccept(x -> c.getAndAccumulate(x, (a, b) -> GSet.merge(a,b)))).toArray(CompletableFuture[]::new);
 
         return CompletableFuture.allOf(map).thenApply(x -> c.get());
     }
 
-    public long get() {
-        return counter.get();
+    public CompletableFuture<Integer> asyncAndSize() {
+        AtomicReference<Integer> c = new AtomicReference<>();
+        CompletableFuture<GSet>[] map = ownedMembers.stream()
+                .map(member -> ctx.ask(member, (service, ctx) -> service.sizeLocal(), Integer.class)
+                        .thenAccept(x -> c.getAndAccumulate(x, Math::max))).toArray(CompletableFuture[]::new);
+
+        return CompletableFuture.allOf(map).thenApply(x -> c.get());
+    }
+
+    public GSet<T> getLocal() {
+        return set;
+    }
+
+    public int sizeLocal() {
+        return set.size();
     }
 
     @Override
@@ -93,7 +103,7 @@ public class GCounterService implements MembershipListener, Service {
             ringStore.put(ctx.getCluster(), newRing);
             arrangePartitions(newRing);
         }else {
-            // ring is already modified by another GCounterService
+            // ring is already modified by another GSetService
             arrangePartitions(ring);
         }
     }
@@ -107,7 +117,7 @@ public class GCounterService implements MembershipListener, Service {
             ringStore.put(ctx.getCluster(), newRing);
             arrangePartitions(newRing);
         }else {
-            // ring is already modified by another GCounterService
+            // ring is already modified by another GSetService
             arrangePartitions(ring);
         }
     }
@@ -125,7 +135,7 @@ public class GCounterService implements MembershipListener, Service {
             ringStore.put(ctx.getCluster(), ring);
             arrangePartitions(ring);
         }else {
-            // ring is already modified by another GCounterService
+            // ring is already modified by another GSetService
             arrangePartitions(ring);
         }
     }
@@ -135,30 +145,37 @@ public class GCounterService implements MembershipListener, Service {
 
     }
 
-    private synchronized void setCounter(long l) {
-        counter = new GCounter(l);
-    }
-
     @Override
     public void onClose() {
 
     }
 
-    private static class MergeRequest implements Request<GCounterService, Long> {
-        private final long counterValue;
+    private static class MergeRequest implements Request<GSetService, GSet> {
+        private final GSet setValue;
 
-        public MergeRequest(long counterValue) {
-            this.counterValue = counterValue;
+        public MergeRequest(GSet setValue) {
+            this.setValue = setValue;
         }
 
         @Override
-        public void run(GCounterService service, OperationContext<Long> ctx) {
-            long serviceVal = service.counter.get();
-            long newVal = GCounter.combine(counterValue, serviceVal);
-            if (newVal != serviceVal)
-                service.setCounter(newVal);
-            ctx.reply(newVal);
-
+        public void run(GSetService service, OperationContext<GSet> ctx) {
+            GSet serviceVal = service.getLocal();
+            GSet newVal = GSet.merge(setValue, serviceVal);
+            if (newVal.size() > serviceVal.size()) {
+                serviceVal.addAll(newVal);
+                ctx.reply(serviceVal);
+            } else {
+                newVal.addAll(serviceVal);
+                ctx.reply(newVal);
+            }
         }
+    }
+
+    private void set(GSet newVal) {
+        set = newVal;
+    }
+
+    protected void addAllLocal(Collection<T> items) {
+        set.addAll(items);
     }
 }

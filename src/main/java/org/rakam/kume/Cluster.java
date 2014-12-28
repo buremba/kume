@@ -415,7 +415,7 @@ public class Cluster implements Service {
         if (service == null)
             return false;
 
-        service.destroy();
+        service.onClose();
         int serviceId = services.indexOf(service);
         // we do not shift the array because if the indexes change, we have to ensure consensus among nodes.
         services.set(serviceId, null);
@@ -506,6 +506,11 @@ public class Cluster implements Service {
 
     public List<Service> getServices() {
         return Collections.unmodifiableList(services);
+    }
+
+    @Override
+    public void onClose() {
+
     }
 
     public static class HeartbeatRequest implements Operation<Cluster> {

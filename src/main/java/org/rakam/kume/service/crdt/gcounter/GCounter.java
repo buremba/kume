@@ -14,7 +14,7 @@ import static java.lang.Math.max;
  * Created by buremba <Burak Emre Kabakcı> on 20/12/14 03:22.
  */
 public class GCounter implements KryoSerializable {
-    LongAdder counter = new LongAdder();
+    LongAdder counter;
 
     public GCounter(long l) {
         // there is no way to construct LongAdder with an initial value.
@@ -25,6 +25,7 @@ public class GCounter implements KryoSerializable {
     }
 
     public GCounter() {
+        counter = new LongAdder();
     }
 
     public void increment() {
@@ -60,6 +61,4 @@ public class GCounter implements KryoSerializable {
         counter = new LongAdder();
         counter.add(l);
     }
-
-
 }
