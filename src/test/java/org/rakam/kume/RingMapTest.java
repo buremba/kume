@@ -50,7 +50,7 @@ public class RingMapTest extends KumeTest {
 
         Cluster cluster0 = new ClusterBuilder().start();
 
-        RingMap<String, Integer> ringMap0 = cluster0.createService("tableName", bus -> new RingMap<>(bus, Math::max, 2));
+        RingMap<String, Integer> ringMap0 = cluster0.createService("tableName", bus -> new RingMap<String, Integer>(bus, Math::max, 2));
 
         for (int i = 0; i < 1000; i++) {
             ringMap0.put("test" + System.currentTimeMillis() + i, i).get();

@@ -46,18 +46,26 @@ public class RingMap<K, V> extends PausableService implements MembershipListener
     private LinkedList<MigrationListener> migrationListeners = new LinkedList<>();
     Map<TokenRange, Map<K, V>> dataWaitingForMigration = new HashMap<>();
 
-    public RingMap(Cluster.ServiceContext ctx, MapMergePolicy<V> mergePolicy, int replicationFactor) {
+    public RingMap(Cluster.ServiceContext<RingMap> ctx, MapMergePolicy<V> mergePolicy, int replicationFactor) {
         this.ctx = ctx;
         this.mergePolicy = mergePolicy;
         this.replicationFactor = replicationFactor;
 
-        ctx.getCluster().addMembershipListener(this);
-        localMember = ctx.getCluster().getLocalMember();
+        Cluster cluster = ctx.getCluster();
+        cluster.addMembershipListener(this);
+        localMember = cluster.getLocalMember();
 
-        ConsistentHashRing newRing = new ConsistentHashRing(ctx.getCluster().getMembers(), bucketPerNode, replicationFactor);
-        ring = newRing;
-        bucketIds = createBucketForRing(newRing);
-        map = createEmptyMap(ring);
+        // if we're the master node and initializing the service, then it's a new service.
+        if(cluster.getMaster().equals(localMember)) {
+            ConsistentHashRing newRing = new ConsistentHashRing(cluster.getMembers(), bucketPerNode, replicationFactor);
+            ring = newRing;
+            bucketIds = createBucketForRing(newRing);
+            map = createEmptyMap(ring);
+        }else {
+            CompletableFuture<ConsistentHashRing> ringFuture = ctx.ask(cluster.getMaster(), (service, ctx0) -> ctx0.reply(service.getRing()));
+            ConsistentHashRing ring = ringFuture.join();
+            setRing(ring);
+        }
     }
 
     protected int[] createBucketForRing(ConsistentHashRing ring) {
@@ -101,16 +109,16 @@ public class RingMap<K, V> extends PausableService implements MembershipListener
             ctx.reply(hashMap);
         }, Map.class).join();
 
-            int myClusterSize = ctx.getCluster().getMembers().size() - 1;
-            int otherClusterSize = data.get("memberCount").intValue();
-            long startTime = data.get("startTime").longValue();
-            if (otherClusterSize > myClusterSize) {
-                joinCluster(member, otherClusterSize);
-            } else if (otherClusterSize == myClusterSize && startTime < ctx.startTime()) {
-                joinCluster(member, otherClusterSize);
-            } else {
-                addMember(member);
-            }
+        int myClusterSize = ctx.getCluster().getMembers().size() - 1;
+        int otherClusterSize = data.get("memberCount").intValue();
+        long startTime = data.get("startTime").longValue();
+        if (otherClusterSize > myClusterSize) {
+            joinCluster(member, otherClusterSize);
+        } else if (otherClusterSize == myClusterSize && startTime < ctx.startTime()) {
+            joinCluster(member, otherClusterSize);
+        } else {
+            addMember(member);
+        }
 
     }
 
@@ -121,24 +129,69 @@ public class RingMap<K, V> extends PausableService implements MembershipListener
                 .ask(oneMemberOfCluster, (service, ctx1) -> ctx1.reply(service.getRing()), ConsistentHashRing.class)
                 .join();
 
-            ConsistentHashRing newRing;
-            if (remoteRing.getMembers().contains(localMember)) {
-                ring = remoteRing.removeNode(localMember);
-                newRing = remoteRing;
-            } else {
-                ring = remoteRing;
-                newRing = remoteRing.addNode(localMember);
-            }
-            // we don't care about the old entries because the old ring doesn't have this local member so all operations will be remote.
-            // the old entries will be added to the cluster when the new ring is set.
-            changeRing(newRing).thenAccept(x -> {
-                        // maybe we can parallelize this operation in order to make it fast
+        ConsistentHashRing newRing;
+        if (remoteRing.getMembers().contains(localMember)) {
+            ring = remoteRing.removeNode(localMember);
+            newRing = remoteRing;
+        } else {
+            ring = remoteRing;
+            newRing = remoteRing.addNode(localMember);
+        }
+        // we don't care about the old entries because the old ring doesn't have this local member so all operations will be remote.
+        // the old entries will be added to the cluster when the new ring is set.
+        changeRing(newRing).thenAccept(x -> {
+                    // maybe we can parallelize this operation in order to make it fast
 //                        Arrays.stream(oldBuckets).forEach(map -> map.forEach(this::put));
-                        Set<Member> members = ring.getMembers();
-                        LOGGER.info("Joined a cluster which has {} members {}.", members.size(), members);
-                    }
-            ).join();
+                    Set<Member> members = ring.getMembers();
+                    LOGGER.info("Joined a cluster which has {} members {}.", members.size(), members);
+                }
+        ).join();
 
+    }
+
+    private synchronized CompletableFuture<Void> setRing(ConsistentHashRing newRing) {
+        ConcurrentHashMap<K, V>[] newMap = createEmptyMap(newRing);
+        int[] newBucketIds = createBucketForRing(newRing);
+
+        ArrayList<CompletableFuture> migrations = new ArrayList<>();
+        for (Entry<TokenRange, List<Member>> entry : newRing.getBuckets().entrySet()) {
+            TokenRange range = entry.getKey();
+            List<Member> members = entry.getValue();
+
+            if (members.contains(localMember)) {
+                List<Member> bucketMembers = entry.getValue();
+                Member ownerMember = bucketMembers.get(members.indexOf(localMember) % bucketMembers.size());
+
+                LOGGER.debug("asking entries [{}, {}] from {}", range.start, range.end, ownerMember);
+
+                CompletableFuture<Map<K, V>> ask = ctx.ask(ownerMember, new ChangeRingRequest(range.start, range.end));
+                CompletableFuture<Void> f = ask
+                        .thenAccept(data -> {
+                            newMap[Arrays.binarySearch(newBucketIds, range.id)].putAll(data);
+                            if (!ownerMember.equals(localMember))
+                                LOGGER.debug("{} elements in token[{} - {}] moved from {} to {}", data.size(), range.start, range.end, ownerMember, localMember);
+                        });
+                migrations.add(f);
+            }
+        }
+
+        if (migrations.size() > 0) {
+            migrationListeners.forEach(l -> Throwables.propagate(() -> l.migrationStart(localMember)));
+        }
+
+        // resume when all migrations completed
+        return CompletableFuture.allOf(migrations.toArray(new CompletableFuture[migrations.size()]))
+                .thenRun(() -> {
+                    LOGGER.debug("{} migration completed.  New ring has {} buckets in member {}",
+                            migrations.size(), newRing.getBuckets().size(), localMember);
+                    synchronized (ctx) {
+                        bucketIds = newBucketIds;
+                        map = newMap;
+                        ring = newRing;
+                    }
+                    migrationListeners.forEach(l -> Throwables.propagate(() -> l.migrationEnd(localMember)));
+                    logOwnedBuckets();
+                });
     }
 
     private CompletableFuture<Void> changeRing(ConsistentHashRing newRing) {
@@ -300,7 +353,8 @@ public class RingMap<K, V> extends PausableService implements MembershipListener
                 putLocal(key, val);
                 stages[idx++] = CompletableFuture.completedFuture(null);
             } else {
-                stages[idx++] = ctx.ask(next, new PutMapOperation(key, val));;
+                stages[idx++] = ctx.ask(next, new PutMapOperation(key, val));
+                ;
             }
         }
 
@@ -358,11 +412,11 @@ public class RingMap<K, V> extends PausableService implements MembershipListener
         CompletableFuture<Map<Member, Integer>> future = new CompletableFuture<>();
 
         resultMap.forEach((key, f) -> f.thenAccept(x -> {
-                m.put(key, x);
-                resultMap.remove(key);
-                if (resultMap.size() == 0) {
-                    future.complete(m);
-                }
+            m.put(key, x);
+            resultMap.remove(key);
+            if (resultMap.size() == 0) {
+                future.complete(m);
+            }
         }));
 
         return future;

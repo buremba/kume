@@ -13,6 +13,7 @@ public class ClusterBuilder {
     private Collection<Member> members;
     private ServiceInitializer services;
     private InetSocketAddress serverAddress;
+    private boolean mustJoinCluster = false;
 
     public ClusterBuilder members(Collection<Member> members) {
         this.members = members;
@@ -26,6 +27,14 @@ public class ClusterBuilder {
     public ClusterBuilder services(ServiceInitializer services) {
         this.services = services;
         return this;
+    }
+
+    public boolean mustJoinCluster() {
+        return mustJoinCluster;
+    }
+
+    public void mustJoinCluster(boolean join) {
+        mustJoinCluster = join;
     }
 
     public ServiceInitializer services() {
@@ -51,6 +60,6 @@ public class ClusterBuilder {
         if(services==null)
             services = new ServiceInitializer();
 
-        return new Cluster(members, services, serverAddress);
+        return new Cluster(members, services, serverAddress, mustJoinCluster);
     }
 }

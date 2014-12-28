@@ -40,6 +40,7 @@ import java.util.Map;
 import java.util.Random;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.CountDownLatch;
@@ -88,7 +89,7 @@ public class Cluster implements Service {
     private ConcurrentMap<InetSocketAddress, Integer> pendingUserVotes = CacheBuilder.newBuilder().expireAfterWrite(100, TimeUnit.SECONDS).<InetSocketAddress, Integer>build().asMap();
     private MemberState memberState;
 
-    public Cluster(Collection<Member> members, ServiceInitializer serviceGenerators, InetSocketAddress serverAddress) throws InterruptedException {
+    public Cluster(Collection<Member> members, ServiceInitializer serviceGenerators, InetSocketAddress serverAddress, boolean mustJoinCluster) throws InterruptedException {
         clusterStartTime = System.currentTimeMillis();
         this.members = new HashSet<>(members);
 
@@ -137,6 +138,10 @@ public class Cluster implements Service {
 
         LOGGER.info("{} started , listening UDP multicast server {}", localMember, multicastAddress);
 
+        if (mustJoinCluster) {
+            joinCluster();
+        }
+
         services = new ArrayList<>(serviceGenerators.size() + 16);
         services.add(this);
         IntStream.range(0, serviceGenerators.size())
@@ -155,35 +160,89 @@ public class Cluster implements Service {
         multicastServer.setAutoRead(true);
     }
 
+    public void joinCluster() {
+        multicastServer.sendMulticast(new JoinOperation());
+
+        CompletableFuture<Boolean> latch = new CompletableFuture<>();
+        AtomicInteger count = new AtomicInteger();
+        workerGroup.scheduleAtFixedRate(() -> {
+            multicastServer.sendMulticast(new JoinOperation());
+            if (!master.equals(localMember)) {
+                // this is a trick that stops this task. the exception will be swallowed.
+                latch.complete(true);
+                throw new RuntimeException("found cluster");
+            }
+            if (count.incrementAndGet() >= 20)
+                latch.complete(false);
+        }, 0, 250, TimeUnit.MILLISECONDS);
+
+        memberState = memberState.FOLLOWER;
+        if (!latch.join()) {
+            throw new IllegalStateException("Could not found a cluster. You may disable mustJoinCluster.set(false) for creating new cluster.");
+        }
+
+    }
+
     public synchronized void addMemberInternal(Member member) {
-        if (!clusterConnection.containsKey(member) && !member.equals(localMember)) {
+        if (!members.contains(member) && !member.equals(localMember)) {
             LOGGER.info("Discovered new member {}", member);
 
-            Channel channel;
-            try {
-                channel = connectServer(member.getAddress());
-            } catch (InterruptedException e) {
-                LOGGER.error("Couldn't connect new server", e);
-                return;
+            // we may create the connection before executing this method.
+            if (!clusterConnection.containsKey(member)) {
+                Channel channel;
+                try {
+                    channel = connectServer(member.getAddress());
+                } catch (InterruptedException e) {
+                    LOGGER.error("Couldn't connect new server", e);
+                    return;
+                }
+                clusterConnection.put(member, channel);
             }
 
             members.add(member);
-            clusterConnection.put(member, channel);
             if (isMaster())
                 heartbeatMap.put(member, System.currentTimeMillis());
             membershipListeners.forEach(x -> Throwables.propagate(() -> x.memberAdded(member)));
         }
     }
 
+    public synchronized void addMembersInternal(Set<Member> newMembers) {
+        if (!members.containsAll(newMembers)) {
+            LOGGER.info("Discovered another cluster of {} members", members.size());
 
-    private void scheduleClusteringTask() {
+            for (Member member : newMembers) {
+                // we may create the connection before executing this method.
+                if (!clusterConnection.containsKey(member)) {
+                    Channel channel;
+                    try {
+                        channel = connectServer(member.getAddress());
+                    } catch (InterruptedException e) {
+                        LOGGER.error("Couldn't connect new server", e);
+                        return;
+                    }
+                    clusterConnection.put(member, channel);
+                }
+
+                members.add(member);
+                if (isMaster())
+                    heartbeatMap.put(member, System.currentTimeMillis());
+            }
+            membershipListeners.forEach(x -> Throwables.propagate(() -> x.clusterMerged(newMembers)));
+        }
+    }
+
+    private void scheduleClusteringTask() throws InterruptedException {
+        workerGroup.schedule(() -> {
+
+        }, 10, TimeUnit.MILLISECONDS);
+
         heartbeatTask = workerGroup.scheduleAtFixedRate(() -> {
             long time = System.currentTimeMillis();
 
             if (isMaster()) {
                 heartbeatMap.forEach((member, lastResponse) -> {
                     if (time - lastResponse > 2000) {
-                        removeMemberAsMaster(member);
+                        removeMemberAsMaster(member, true);
                     }
                 });
 
@@ -197,17 +256,18 @@ public class Cluster implements Service {
                         }
                     }, 150 + new Random().nextInt(150), TimeUnit.MILLISECONDS);
                 } else {
-
                     Member localMember = getLocalMember();
-                    internalBus.send(master, (masterCluster, ctx) -> {
-                        masterCluster.heartbeatMap.put(localMember, System.currentTimeMillis());
-                    });
+                    internalBus.send(master, (masterCluster, ctx) ->
+                            masterCluster.heartbeatMap.put(localMember, System.currentTimeMillis()));
                 }
             }
 
         }, 200, 200, TimeUnit.MILLISECONDS);
 
-        workerGroup.scheduleWithFixedDelay(() -> multicastServer.sendMulticast(new JoinOperation()), 0, 2000, TimeUnit.MILLISECONDS);
+        workerGroup.scheduleWithFixedDelay(() -> {
+            ClusterCheckAndMergeOperation req = new ClusterCheckAndMergeOperation(getMembers().size(), System.currentTimeMillis() - clusterStartTime);
+            multicastServer.sendMulticast(req);
+        }, 0, 2000, TimeUnit.MILLISECONDS);
     }
 
     public void voteElection() {
@@ -242,11 +302,17 @@ public class Cluster implements Service {
         }
     }
 
-    private synchronized void changeMaster(Member masterMember) {
-        master = masterMember;
+    public MemberState memberState() {
+        return memberState;
     }
 
-    public void removeMemberAsMaster(Member member) {
+    private synchronized void changeMaster(Member masterMember) {
+        master = masterMember;
+        memberState = masterMember.equals(localMember) ? MemberState.MASTER : MemberState.FOLLOWER;
+
+    }
+
+    public void removeMemberAsMaster(Member member, boolean replicate) {
         if (!isMaster())
             throw new IllegalStateException();
 
@@ -254,12 +320,14 @@ public class Cluster implements Service {
 
 //        heartbeatMap.remove(member);
 //        members.remove(member);
+//        if(replicate) {
+
 //        internalBus.sendAllMembers((cluster, ctx) -> {
 //            cluster.clusterConnection.remove(member);
 //            Cluster.LOGGER.info("Member removed {}", member);
 //            cluster.membershipListeners.forEach(l -> Throwables.propagate(() -> l.memberRemoved(member)));
 //        }, true);
-
+//        }
     }
 
     private Channel connectServer(SocketAddress serverAddr) throws InterruptedException {
@@ -404,7 +472,7 @@ public class Cluster implements Service {
     private Channel getConnection(Member member) {
         Channel channel = clusterConnection.get(member);
         if (channel == null) {
-            if(!members.contains(member))
+            if (!members.contains(member))
                 throw new IllegalArgumentException("the member doesn't exist in the cluster");
 
             Channel created;
@@ -512,12 +580,12 @@ public class Cluster implements Service {
         }
 
         public <R> void send(Member server, Request<T, R> request) {
-            if(server.equals(localMember)) {
+            if (server.equals(localMember)) {
                 CompletableFuture<R> f = new CompletableFuture<>();
                 Service s = services.get(service);
                 LocalOperationContext ctx = new LocalOperationContext(f, localMember);
                 workerGroup.execute(() -> s.handle(ctx, request));
-            }else {
+            } else {
                 sendInternal(getConnection(server), request, service);
             }
         }
@@ -648,10 +716,14 @@ public class Cluster implements Service {
             });
         }
 
-        public <R> CompletableFuture<R> tryAskUntilDone(Member member, Request<?, R> req, int numberOfTimes) {
+        public <R> CompletableFuture<R> tryAskUntilDone(Member member, Request<T, R> req, int numberOfTimes) {
             CompletableFuture<R> f = new CompletableFuture<>();
             tryAskUntilDone(member, req, numberOfTimes, f);
             return f;
+        }
+
+        public <R> CompletableFuture<R> tryAskUntilDone(Member member, Request<T, R> req, int numberOfTimes, Class<R> clazz) {
+            return tryAskUntilDone(member, req, numberOfTimes);
         }
 
     }
@@ -660,74 +732,111 @@ public class Cluster implements Service {
 
         @Override
         public void run(Cluster cluster, OperationContext<Void> ctx) {
-            Member sender = ctx.getSender();
-            if (cluster.getMembers().contains(sender))
-                return;
+            synchronized (cluster) {
+                Channel channel;
+                Member newMember = ctx.getSender();
+                try {
+                    channel = cluster.connectServer(newMember.address);
+                } catch (InterruptedException e) {
+                    return;
+                }
+                cluster.clusterConnection.put(newMember, channel);
+                cluster.addMemberInternal(newMember);
 
-            Member masterMember = cluster.getMaster();
-            cluster.internalBus.send(masterMember, (masterCluster, ctx0) -> {
-                Integer val = masterCluster.pendingUserVotes.merge(sender.address, 1, Integer::sum);
-                if (val > masterCluster.getMembers().size()) {
-                    long clusterStartTime = masterCluster.clusterStartTime;
-                    Set<Member> myMembers = masterCluster.getMembers();
-                    masterCluster.multicastServer.send(sender.getAddress(), (service, ctx1) ->
-                            service.multicastServer.send(ctx1.getSender().address, new MergeClusterRequest(service.getMembers())));
-                    CompletableFuture<Object> ask = masterCluster.internalBus
-                            .ask(sender, (newNode, ctx1) -> {
-                                if (newNode.members.size() < myMembers.size() || newNode.clusterStartTime > clusterStartTime) {
-                                    newNode.changeCluster(myMembers, masterMember);
-//                                    newNode.addMemberInternal(masterMember);
-                                } else {
-                                    // eventually they will change the role and the other branch will be executed.
+                Member masterMember = cluster.getMaster();
+                Set<Member> members = cluster.getMembers();
+                Request<Cluster, Object> changeClusterOfNewMember = (service, ctx0) -> {
+                    service.changeMaster(masterMember);
+                    members.forEach(member -> service.addMemberInternal(member));
+                };
+
+                Request<Cluster, Object> addNewMember = (service, ctx0) -> service.addMemberInternal(newMember);
+
+                for (Member member : cluster.getMembers()) {
+                    cluster.internalBus.tryAskUntilDone(member, member.equals(newMember) ? changeClusterOfNewMember : addNewMember, 5)
+                            .whenComplete((result, ex) -> {
+                                if (ex != null && ex instanceof TimeoutException) {
+                                    cluster.removeMemberAsMaster(member, true);
                                 }
                             });
-
-                    ask.thenAccept(v -> {
-                        masterCluster.internalBus.askAllMembers((aMemberInCluster, ctx1) -> {
-                            aMemberInCluster.addMemberInternal(sender);
-                        });
-                    });
-                }
-            });
-        }
-
-        private static class ClusterChangeRequest implements Request<Cluster, Boolean> {
-            private final Set<Member> members;
-            private final Member masterMember;
-
-            public ClusterChangeRequest(Set<Member> members, Member masterMember) {
-                this.members = members;
-                this.masterMember = masterMember;
-            }
-
-            @Override
-            public void run(Cluster service, OperationContext<Boolean> ctx) {
-                service.changeCluster(members, masterMember);
-                ctx.reply(true);
-            }
-        }
-
-        private static class MergeClusterRequest implements Operation<Cluster> {
-            private final Set<Member> otherMembers;
-
-            public MergeClusterRequest(Set<Member> otherMembers) {
-                this.otherMembers = otherMembers;
-            }
-
-            @Override
-            public void run(Cluster service, OperationContext<Void> ctx) {
-
-                Set<Member> myMembers = service.getMembers();
-                long count = otherMembers.stream().filter(x -> service.pendingUserVotes.getOrDefault(x, 0) > myMembers.size()).count();
-                if(count > otherMembers.size()/2) {
-                    for (Member member : otherMembers) {
-                        service.addMemberInternal(member);
-                        service.internalBus
-                                .ask(member, new ClusterChangeRequest(myMembers, service.getLocalMember()));
-                    }
                 }
             }
         }
+    }
+
+
+    public static class ClusterCheckAndMergeOperation implements Operation<Cluster> {
+
+        private final int clusterSize;
+        private final long timeRunning;
+
+        public ClusterCheckAndMergeOperation(int clusterSize, long timeRunning) {
+            this.clusterSize = clusterSize;
+            this.timeRunning = timeRunning;
+        }
+
+        @Override
+        public void run(Cluster cluster, OperationContext<Void> ctx) {
+            Member sender = ctx.getSender();
+            Set<Member> clusterMembers = cluster.getMembers();
+            if (clusterMembers.contains(sender))
+                return;
+
+            if (clusterMembers.size() > clusterSize)
+                return;
+
+            long myTimeRunning = System.currentTimeMillis() - cluster.clusterStartTime;
+            if (clusterMembers.size() == clusterSize && myTimeRunning < timeRunning)
+                return;
+
+            Channel channel;
+            try {
+                channel = cluster.connectServer(ctx.getSender().address);
+            } catch (InterruptedException e) {
+                return;
+            }
+
+            cluster.clusterConnection.put(ctx.getSender(), channel);
+            cluster.addMemberInternal(ctx.getSender());
+
+            final Set<Member> otherClusterMembers;
+            try {
+                otherClusterMembers = cluster.internalBus.tryAskUntilDone(ctx.getSender(), (service, ctx0) -> {
+                    ctx0.reply(service.getMembers());
+                }, 5, Set.class).join();
+            } catch (CompletionException e) {
+                cluster.removeMemberAsMaster(ctx.getSender(), false);
+                return;
+            }
+
+            for (Member otherClusterMember : otherClusterMembers) {
+                if (otherClusterMember.equals(ctx.getSender()))
+                    continue;
+                if(clusterMembers.contains(otherClusterMember)) {
+                    otherClusterMembers.remove(otherClusterMember);
+                    continue;
+                }
+
+                Channel memberChannel;
+                try {
+                    memberChannel = cluster.connectServer(ctx.getSender().address);
+                } catch (InterruptedException e) {
+                    otherClusterMembers.remove(ctx.getSender());
+                    continue;
+                }
+                cluster.clusterConnection.put(ctx.getSender(), memberChannel);
+                cluster.addMemberInternal(ctx.getSender());
+            }
+
+            cluster.getMembers().stream()
+                    .map(member -> cluster.internalBus
+                            .tryAskUntilDone(member, (service, ctx2) -> service.addMembersInternal(otherClusterMembers), 5)
+                            .whenComplete((result, ex) -> {
+                                if (ex != null && ex instanceof TimeoutException)
+                                    cluster.removeMemberAsMaster(member, true);
+                            })).forEach(CompletableFuture::join);
+        }
+
     }
 
     private synchronized void changeCluster(Set<Member> newClusterMembers, Member masterMember) {
@@ -739,7 +848,7 @@ public class Cluster implements Service {
             messageHandlers.cleanUp();
             LOGGER.info("Joined a cluster of {} nodes.", members.size());
             membershipListeners.forEach(x -> Throwables.propagate(() -> x.clusterChanged()));
-        }  finally {
+        } finally {
             resume();
         }
     }

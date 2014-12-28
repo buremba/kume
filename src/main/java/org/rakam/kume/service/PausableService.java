@@ -38,7 +38,7 @@ public abstract class PausableService implements Service {
 
 
     public void safelyHandle(OperationContext ctx, Object object) {
-        LOGGER.warn("Discarded message {} because the service doesn't implement handle(OperationContext, request)", object);
+        LOGGER.warn("Discarded message {} because the service doesn't implement handle(OperationContext, object)", object);
     }
 
     public synchronized void pause() {

@@ -2,6 +2,7 @@ package org.rakam.kume;
 
 import org.junit.Test;
 
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 
@@ -43,7 +44,12 @@ public class KumeTest {
             }
 
             @Override
-            public void clusterMerged() {
+            public void clusterMerged(Set<Member> newMembers) {
+
+            }
+
+            @Override
+            public void clusterChanged() {
 
             }
         });
@@ -65,9 +71,15 @@ public class KumeTest {
             }
 
             @Override
-            public void clusterMerged() {
+            public void clusterMerged(Set<Member> newMembers) {
 
             }
+
+            @Override
+            public void clusterChanged() {
+
+            }
+
         });
         countDownLatch.await();
     }

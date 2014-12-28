@@ -11,8 +11,8 @@ import org.slf4j.LoggerFactory;
 public interface Service {
     final static Logger LOGGER = LoggerFactory.getLogger(Service.class);
 
-    default void handle(OperationContext ctx, Object request) {
-        LOGGER.warn("Discarded message {} because the service doesn't implement handle(OperationContext, request)", request);
+    default void handle(OperationContext ctx, Object object) {
+        LOGGER.warn("Discarded message {} because the service doesn't implement handle(OperationContext, Object)", object);
     }
 
     default void handle(OperationContext ctx, Request request) {
