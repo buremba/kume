@@ -18,7 +18,7 @@ public class RemoteOperationContext implements OperationContext {
 
     public RemoteOperationContext(ChannelHandlerContext ctx, int serviceId, int packageId, Cluster cluster) {
         this.serviceId =  serviceId;
-        this.ctx =  ctx;
+        this.ctx = ctx;
         this.packageId =  packageId;
         this.cluster =  cluster;
     }

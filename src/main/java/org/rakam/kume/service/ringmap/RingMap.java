@@ -93,40 +93,23 @@ public class RingMap<K, V> extends PausableService implements MembershipListener
     }
 
     @Override
-    public void memberAdded(Member member) {
+    public synchronized void memberAdded(Member member) {
         if (ring.getMembers().contains(member)) {
             // it means we joined this cluster already
             // via requesting ring from an existing node.
             return;
         }
 
-        Member sourceMember = localMember;
-        Map<String, Number> data = ctx.ask(member, (service, ctx) -> {
-            Map<String, Number> hashMap = new HashMap();
-            Set<Member> m = service.ctx.getCluster().getMembers();
-            hashMap.put("memberCount", m.contains(sourceMember) ? m.size() - 1 : m.size());
-            hashMap.put("startTime", service.ctx.startTime());
-            ctx.reply(hashMap);
-        }, Map.class).join();
+        LOGGER.debug("Adding member {} to existing cluster of {} nodes.", member, ctx.getCluster().getMembers().size());
 
-        int myClusterSize = ctx.getCluster().getMembers().size() - 1;
-        int otherClusterSize = data.get("memberCount").intValue();
-        long startTime = data.get("startTime").longValue();
-        if (otherClusterSize > myClusterSize) {
-            joinCluster(member, otherClusterSize);
-        } else if (otherClusterSize == myClusterSize && startTime < ctx.startTime()) {
-            joinCluster(member, otherClusterSize);
-        } else {
-            addMember(member);
-        }
-
+        ConsistentHashRing newRing = ring.addNode(member);
+        changeRing(newRing).join();
     }
 
-    private void joinCluster(Member oneMemberOfCluster, int otherClusterSize) {
-        LOGGER.debug("Joining a cluster of {} nodes.", otherClusterSize);
-
+    @Override
+    public void clusterChanged() {
         ConsistentHashRing remoteRing = ctx
-                .ask(oneMemberOfCluster, (service, ctx1) -> ctx1.reply(service.getRing()), ConsistentHashRing.class)
+                .ask(ctx.getCluster().getMaster(), (service, ctx1) -> ctx1.reply(service.getRing()), ConsistentHashRing.class)
                 .join();
 
         ConsistentHashRing newRing;
@@ -289,13 +272,6 @@ public class RingMap<K, V> extends PausableService implements MembershipListener
                 });
     }
 
-    private synchronized void addMember(Member member) {
-        LOGGER.debug("Adding member {} to existing cluster of {} nodes.", member, ctx.getCluster().getMembers().size());
-
-        ConsistentHashRing newRing = ring.addNode(member);
-        changeRing(newRing).join();
-    }
-
     Map<K, V> getPartition(int bucketId) {
         int i = Arrays.binarySearch(bucketIds, bucketId);
         return i >= 0 ? map[i] : null;
@@ -312,11 +288,6 @@ public class RingMap<K, V> extends PausableService implements MembershipListener
 
     @Override
     public void clusterMerged(Set<Member> newMembers) {
-
-    }
-
-    @Override
-    public void clusterChanged() {
 
     }
 

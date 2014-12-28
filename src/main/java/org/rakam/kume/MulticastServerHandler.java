@@ -13,17 +13,24 @@ import io.netty.util.NetUtil;
 import org.rakam.kume.transport.MulticastPacket;
 import org.rakam.kume.transport.serialization.Serializer;
 import org.rakam.kume.util.NetworkUtil;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.net.InetSocketAddress;
+import java.net.NetworkInterface;
 
 /**
  * Created by buremba <Burak Emre Kabakcı> on 25/12/14 19:44.
  */
 public class MulticastServerHandler {
+    final static Logger LOGGER = LoggerFactory.getLogger(MulticastServerHandler.class);
+
     private final Member localMember;
     private NioDatagramChannel server;
     InetSocketAddress address;
     Bootstrap handler;
+    static NetworkInterface multicastInterface = NetworkUtil.getPublicInterface();
+    private boolean joinGroup;
 
     public MulticastServerHandler(Cluster cluster, InetSocketAddress address) throws InterruptedException {
         this.address = address;
@@ -46,8 +53,9 @@ public class MulticastServerHandler {
 
     public MulticastServerHandler start() throws InterruptedException {
         server = (NioDatagramChannel) handler.bind(address.getPort()).sync().channel();
-        server.joinGroup(address, NetworkUtil.getPublicInterface()).sync();
-
+        server.joinGroup(address, multicastInterface).sync();
+        // why netty doesn't have a get method for group memberships?
+        joinGroup = true;
         return this;
     }
 
@@ -68,4 +76,19 @@ public class MulticastServerHandler {
         server.leaveGroup(address, NetUtil.LOOPBACK_IF).sync();
         server.close().sync();
     }
+
+    public void setJoinGroup(boolean joinGroup) {
+        try {
+            if(this.joinGroup && !joinGroup)
+                server.leaveGroup(address, multicastInterface).sync();
+            else
+            if(!this.joinGroup && joinGroup)
+                server.joinGroup(address, multicastInterface).sync();
+        } catch (InterruptedException e) {
+            LOGGER.error("couldn't change multicast server state.", e);
+        }
+
+        this.joinGroup = joinGroup;
+    }
+
 }
