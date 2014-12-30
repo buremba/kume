@@ -12,7 +12,6 @@ import io.netty.channel.socket.nio.NioDatagramChannel;
 import io.netty.util.NetUtil;
 import org.rakam.kume.transport.MulticastPacket;
 import org.rakam.kume.transport.serialization.Serializer;
-import org.rakam.kume.util.NetworkUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -29,7 +28,7 @@ public class MulticastServerHandler {
     private NioDatagramChannel server;
     InetSocketAddress address;
     Bootstrap handler;
-    static NetworkInterface multicastInterface = NetworkUtil.getPublicInterface();
+    static NetworkInterface multicastInterface = NetUtil.LOOPBACK_IF;
     private boolean joinGroup;
 
     public MulticastServerHandler(Cluster cluster, InetSocketAddress address) throws InterruptedException {
@@ -40,7 +39,7 @@ public class MulticastServerHandler {
                 .localAddress(address)
                 .group(new NioEventLoopGroup())
                 .option(ChannelOption.SO_REUSEADDR, true)
-                .option(ChannelOption.IP_MULTICAST_IF, NetworkUtil.getPublicInterface())
+                .option(ChannelOption.IP_MULTICAST_IF, multicastInterface)
                 .option(ChannelOption.AUTO_READ, false)
                 .handler(new ChannelInitializer<NioDatagramChannel>() {
                     @Override

@@ -306,11 +306,11 @@ public class ConsistentHashRing {
         return new ConsistentHashRing(buckets1, bucketPerNode, replicationFactor);
     }
 
-    public int findBucketId(String key) {
+    public int findBucketId(Object key) {
         return findBucketIdFromToken(hash(key));
     }
 
-    public Bucket findBucket(String key) {
+    public Bucket findBucket(Object key) {
         return buckets[findBucketIdFromToken(hash(key))];
     }
 

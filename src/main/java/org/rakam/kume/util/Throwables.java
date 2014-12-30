@@ -9,11 +9,12 @@ import org.slf4j.LoggerFactory;
 public class Throwables {
     final static Logger LOGGER = LoggerFactory.getLogger(Throwables.class);
 
-    public static void propagate(Runnable callable){
+    public static Runnable propagate(Runnable callable){
         try {
             callable.run();
         } catch (Exception e) {
             LOGGER.error("error while running throwable code block", e);
         }
+        return callable;
     }
 }

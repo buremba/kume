@@ -17,7 +17,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Stream;
 
-import static com.google.common.base.Preconditions.checkArgument;
+import static com.google.common.base.Preconditions.checkNotNull;
 
 /**
  * Created by buremba <Burak Emre Kabakcı> on 28/12/14 21:26.
@@ -62,8 +62,8 @@ public class GSetService<T> implements Service, MembershipListener {
         }
     }
 
-    public void add(long l) {
-        checkArgument(l > 0, "value (%s) must be a positive integer", l);
+    public void add(T l) {
+        checkNotNull(l, "null value is not supported");
         ownedMembers.forEach(member -> ctx.send(member, (service, ctx) -> service.set.add(l)));
     }
 

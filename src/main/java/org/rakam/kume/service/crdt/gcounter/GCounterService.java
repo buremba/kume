@@ -31,7 +31,7 @@ public class GCounterService implements MembershipListener, Service {
     private static Map<Cluster, ConsistentHashRing> ringStore = new ConcurrentHashMap<>();
     GCounter counter;
 
-    public GCounterService(Cluster.ServiceContext<GCounterService> clusterContext, int replicationFactor) {
+    public GCounterService(Cluster.ServiceContext<GCounterService> clusterContext, GCounter counter, int replicationFactor) {
         this.replicationFactor = replicationFactor;
         ctx = clusterContext;
         Cluster cluster = ctx.getCluster();
@@ -40,13 +40,17 @@ public class GCounterService implements MembershipListener, Service {
         ConsistentHashRing ring = ringStore.computeIfAbsent(ctx.getCluster(),
                 k -> new ConsistentHashRing(cluster.getMembers(), 1, replicationFactor));
         arrangePartitions(ring);
-        counter = new GCounter();
+        this.counter = counter;
         ownedMembers = ring.findBucket(ctx.serviceName()).members;
+    }
+
+    public GCounterService(Cluster.ServiceContext<GCounterService> clusterContext, int replicationFactor) {
+        this(clusterContext, new GCounter(), replicationFactor);
     }
 
     private synchronized void arrangePartitions(ConsistentHashRing ring) {
         List<Member> oldOwnedMembers = ownedMembers;
-        ownedMembers = ring.findBucket(ctx.serviceName()).members;
+        ownedMembers = ring.findBucket(ctx.serviceId()).members;
         Member localMember = ctx.getCluster().getLocalMember();
 
         if (oldOwnedMembers.contains(localMember) && !ownedMembers.contains(localMember)) {

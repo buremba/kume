@@ -19,6 +19,7 @@ import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
 import io.netty.handler.codec.LengthFieldBasedFrameDecoder;
 import io.netty.handler.codec.LengthFieldPrepender;
+import io.netty.util.concurrent.EventExecutor;
 import org.rakam.kume.service.Service;
 import org.rakam.kume.service.ServiceConstructor;
 import org.rakam.kume.transport.Packet;
@@ -61,11 +62,12 @@ public class Cluster implements Service {
 
     // IO thread for TCP and UDP connections
     final EventLoopGroup bossGroup = new NioEventLoopGroup(1);
-    // Processor thread pool that deserialize/serialize and run the requests
+    // Processor thread pool that deserialize/serialize incoming packets
     final EventLoopGroup workerGroup = new NioEventLoopGroup();
-
+    // Thread pool for handling requests and messages
+    final NioEventLoopGroupArray eventExecutors = new NioEventLoopGroupArray();
     // Event loop for running cluster migrations
-    final EventLoopGroup eventLoop = new NioEventLoopGroup(1);
+    final EventExecutor eventLoop = new NioEventLoopGroup(1).next();
 
     final private List<Service> services;
 
@@ -209,7 +211,7 @@ public class Cluster implements Service {
             members.add(member);
             if (isMaster())
                 heartbeatMap.put(member, System.currentTimeMillis());
-            membershipListeners.forEach(x -> Throwables.propagate(() -> x.memberAdded(member)));
+            membershipListeners.forEach(x ->  eventLoop.execute(Throwables.propagate(() -> x.memberAdded(member))));
         }
     }
 
@@ -234,7 +236,7 @@ public class Cluster implements Service {
                 if (isMaster())
                     heartbeatMap.put(member, System.currentTimeMillis());
             }
-            membershipListeners.forEach(x -> Throwables.propagate(() -> x.clusterMerged(newMembers)));
+            membershipListeners.forEach(x -> eventLoop.execute(Throwables.propagate(() -> x.clusterMerged(newMembers))));
         }
     }
 
@@ -252,7 +254,8 @@ public class Cluster implements Service {
                         removeMemberAsMaster(member, true);
                     }
                 });
-                members.forEach(member -> internalBus.send(member, new HeartbeatRequest()));
+//                members.forEach(member -> internalBus.send(member, new HeartbeatRequest()));
+                multicastServer.sendMulticast(new HeartbeatRequest());
             } else {
                 if (time - lastContactedTimeMaster > 500) {
                     workerGroup.schedule(() -> {
@@ -384,8 +387,11 @@ public class Cluster implements Service {
         return (T) serviceNameMap.get(serviceName);
     }
 
-    public <T extends Service> T createService(String name, ServiceConstructor<T> ser) throws InterruptedException {
-        checkNotNull(name, "null is not allowed for service name");
+    public <T extends Service> T getService(String serviceName, Class<T> clazz) {
+        return getService(serviceName);
+    }
+
+    public <T extends Service> T createService(String name, ServiceConstructor<T> ser) {
         checkNotNull(ser, "null is not allowed for service constructor");
         int maxSize = Short.MAX_VALUE * 2;
         checkState(services.size() < maxSize, "Maximum number of allowed services is %s", maxSize);
@@ -393,7 +399,8 @@ public class Cluster implements Service {
         Request<Cluster, Boolean> createServiceRequest = (service, ctx) -> {
             T s = ser.newInstance(new ServiceContext(services.size(), name));
             service.services.add(s);
-            service.serviceNameMap.put(name, s);
+            if(name!=null)
+                service.serviceNameMap.put(name, s);
             ctx.reply(true);
         };
 
@@ -407,6 +414,10 @@ public class Cluster implements Service {
         }
 
         return (T) serviceNameMap.get(name);
+    }
+
+    public <T extends Service> T createService(ServiceConstructor<T> ser) {
+        return createService(null, ser);
     }
 
     public boolean destroyService(String serviceName) {
@@ -746,7 +757,7 @@ public class Cluster implements Service {
             LOGGER.info("Joined a cluster of {} nodes.", members.size());
             multicastServer.setJoinGroup(masterMember.equals(localMember));
             if(!isNew)
-                membershipListeners.forEach(x -> Throwables.propagate(() -> x.clusterChanged()));
+                membershipListeners.forEach(x -> eventLoop.execute(Throwables.propagate(() -> x.clusterChanged())));
         } finally {
             resume();
         }

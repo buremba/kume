@@ -41,6 +41,11 @@ public class GCounter implements KryoSerializable {
         return counter.longValue();
     }
 
+    public synchronized void set(long l) {
+        counter = new LongAdder();
+        counter.add(l);
+    }
+
     public static GCounter combine(GCounter first, GCounter second) {
         long max = max(first.counter.longValue(), second.counter.longValue());
         return new GCounter(max);
