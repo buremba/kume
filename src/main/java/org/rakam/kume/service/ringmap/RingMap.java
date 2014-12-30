@@ -30,7 +30,7 @@ import static java.util.Map.Entry;
 import static org.rakam.kume.util.ConsistentHashRing.TokenRange;
 import static org.rakam.kume.util.ConsistentHashRing.hash;
 
-public class RingMap<K, V> extends PausableService implements MembershipListener {
+public class RingMap<K, V> extends PausableService<RingMap> implements MembershipListener {
     final static Logger LOGGER = LoggerFactory.getLogger(RingMap.class);
     private final MapMergePolicy<V> mergePolicy;
     private final int replicationFactor;
@@ -38,7 +38,6 @@ public class RingMap<K, V> extends PausableService implements MembershipListener
     ConcurrentHashMap<K, V>[] map;
     int[] bucketIds;
     private ConsistentHashRing ring;
-    Cluster.ServiceContext<RingMap> ctx;
     private Random random = new Random();
     int bucketPerNode = 8;
 
@@ -46,12 +45,12 @@ public class RingMap<K, V> extends PausableService implements MembershipListener
     private LinkedList<MigrationListener> migrationListeners = new LinkedList<>();
     Map<TokenRange, Map<K, V>> dataWaitingForMigration = new HashMap<>();
 
-    public RingMap(Cluster.ServiceContext<RingMap> ctx, MapMergePolicy<V> mergePolicy, int replicationFactor) {
-        this.ctx = ctx;
+    public RingMap(Cluster.ServiceContext<RingMap> serviceContext, MapMergePolicy<V> mergePolicy, int replicationFactor) {
+        super(serviceContext);
         this.mergePolicy = mergePolicy;
         this.replicationFactor = replicationFactor;
 
-        Cluster cluster = ctx.getCluster();
+        Cluster cluster = serviceContext.getCluster();
         cluster.addMembershipListener(this);
         localMember = cluster.getLocalMember();
 
@@ -62,7 +61,7 @@ public class RingMap<K, V> extends PausableService implements MembershipListener
             bucketIds = createBucketForRing(newRing);
             map = createEmptyMap(ring);
         }else {
-            CompletableFuture<ConsistentHashRing> ringFuture = ctx.ask(cluster.getMaster(), (service, ctx0) -> ctx0.reply(service.getRing()));
+            CompletableFuture<ConsistentHashRing> ringFuture = serviceContext.ask(cluster.getMaster(), (service, serviceContext0) -> serviceContext0.reply(service.getRing()));
             ConsistentHashRing ring = ringFuture.join();
             setRing(ring);
         }
@@ -100,7 +99,7 @@ public class RingMap<K, V> extends PausableService implements MembershipListener
             return;
         }
 
-        LOGGER.debug("Adding member {} to existing cluster of {} nodes.", member, ctx.getCluster().getMembers().size());
+        LOGGER.debug("Adding member {} to existing cluster of {} nodes.", member, serviceContext.getCluster().getMembers().size());
 
         ConsistentHashRing newRing = ring.addNode(member);
         changeRing(newRing).join();
@@ -108,8 +107,8 @@ public class RingMap<K, V> extends PausableService implements MembershipListener
 
     @Override
     public void clusterChanged() {
-        ConsistentHashRing remoteRing = ctx
-                .ask(ctx.getCluster().getMaster(), (service, ctx1) -> ctx1.reply(service.getRing()), ConsistentHashRing.class)
+        ConsistentHashRing remoteRing = serviceContext
+                .ask(serviceContext.getCluster().getMaster(), (service, serviceContext1) -> serviceContext1.reply(service.getRing()), ConsistentHashRing.class)
                 .join();
 
         ConsistentHashRing newRing;
@@ -147,7 +146,7 @@ public class RingMap<K, V> extends PausableService implements MembershipListener
 
                 LOGGER.debug("asking entries [{}, {}] from {}", range.start, range.end, ownerMember);
 
-                CompletableFuture<Map<K, V>> ask = ctx.ask(ownerMember, new ChangeRingRequest(range.start, range.end));
+                CompletableFuture<Map<K, V>> ask = serviceContext.ask(ownerMember, new ChangeRingRequest(range.start, range.end));
                 CompletableFuture<Void> f = ask
                         .thenAccept(data -> {
                             newMap[Arrays.binarySearch(newBucketIds, range.id)].putAll(data);
@@ -167,7 +166,7 @@ public class RingMap<K, V> extends PausableService implements MembershipListener
                 .thenRun(() -> {
                     LOGGER.debug("{} migration completed.  New ring has {} buckets in member {}",
                             migrations.size(), newRing.getBuckets().size(), localMember);
-                    synchronized (ctx) {
+                    synchronized (serviceContext) {
                         bucketIds = newBucketIds;
                         map = newMap;
                         ring = newRing;
@@ -220,7 +219,7 @@ public class RingMap<K, V> extends PausableService implements MembershipListener
                     else
                         LOGGER.trace("asking entries [{}, {}] from {}", queryStartToken, ownerMember);
 
-                    CompletableFuture<Map<K, V>> ask = ctx.ask(ownerMember, new ChangeRingRequest(queryStartToken, queryEndToken, oldRing));
+                    CompletableFuture<Map<K, V>> ask = serviceContext.ask(ownerMember, new ChangeRingRequest(queryStartToken, queryEndToken, oldRing));
                     CompletableFuture<Void> f = ask
                             .thenAccept(data -> {
                                 int startBucket = newRing.findBucketIdFromToken(queryStartToken);
@@ -262,7 +261,7 @@ public class RingMap<K, V> extends PausableService implements MembershipListener
                 .thenRun(() -> {
                     LOGGER.debug("{} migration completed.  New ring has {} buckets in member {}",
                             migrations.size(), newRing.getBuckets().size(), localMember);
-                    synchronized (ctx) {
+                    synchronized (serviceContext) {
                         bucketIds = newBucketIds;
                         map = newMap;
                         ring = newRing;
@@ -305,7 +304,7 @@ public class RingMap<K, V> extends PausableService implements MembershipListener
             }
         }
 
-        m.forEach((key, value) -> ctx.send(key, new PutAllRequest(value)));
+        m.forEach((key, value) -> serviceContext.send(key, new PutAllRequest(value)));
 
         CompletableFuture[] completableFutures = fromMap.entrySet().stream()
                 .map(entry -> put(entry.getKey(), entry.getValue()))
@@ -324,7 +323,7 @@ public class RingMap<K, V> extends PausableService implements MembershipListener
                 putLocal(key, val);
                 stages[idx++] = CompletableFuture.completedFuture(null);
             } else {
-                stages[idx++] = ctx.ask(next, new PutMapOperation(key, val));
+                stages[idx++] = serviceContext.ask(next, new PutMapOperation(key, val));
                 ;
             }
         }
@@ -343,7 +342,7 @@ public class RingMap<K, V> extends PausableService implements MembershipListener
             return CompletableFuture.completedFuture(getPartition(bucketId).get(key));
         }
 
-        return ctx.ask(members.get(random.nextInt(members.size())),
+        return serviceContext.ask(members.get(random.nextInt(members.size())),
                 new GetRequest(this, key));
     }
 
@@ -355,7 +354,7 @@ public class RingMap<K, V> extends PausableService implements MembershipListener
         CompletableFuture<Void>[] res = new CompletableFuture[bucket.members.size()];
 
         for (int i = 0; i < bucket.members.size(); i++) {
-            CompletableFuture<V> ask = ctx.ask(bucket.members.get(i), new GetRequest(this, key));
+            CompletableFuture<V> ask = serviceContext.ask(bucket.members.get(i), new GetRequest(this, key));
             res[i] = ask.thenAccept(x -> {
                 V v = merged.get();
                 if (v == null) {
@@ -375,10 +374,10 @@ public class RingMap<K, V> extends PausableService implements MembershipListener
     }
 
     public CompletableFuture<Map<Member, Integer>> size() {
-        Request<RingMap, Integer> req = (service, ctx) -> ctx.reply(service.getLocalSize());
-        Map<Member, CompletableFuture<Integer>> resultMap = ctx.askAllMembers(req);
+        Request<RingMap, Integer> req = (service, serviceContext) -> serviceContext.reply(service.getLocalSize());
+        Map<Member, CompletableFuture<Integer>> resultMap = serviceContext.askAllMembers(req);
 
-        Map<Member, Integer> m = new ConcurrentHashMap<>(ctx.getCluster().getMembers().size());
+        Map<Member, Integer> m = new ConcurrentHashMap<>(serviceContext.getCluster().getMembers().size());
         m.put(localMember, getLocalSize());
         CompletableFuture<Map<Member, Integer>> future = new CompletableFuture<>();
 
@@ -415,7 +414,7 @@ public class RingMap<K, V> extends PausableService implements MembershipListener
         }
 
         @Override
-        public void run(RingMap service, OperationContext ctx) {
+        public void run(RingMap service, OperationContext serviceContext) {
             service.putLocal(key, value);
         }
     }

@@ -46,7 +46,7 @@ public class MulticastChannelAdapter extends ChannelInboundHandlerAdapter {
                 Member sender = req.sender;
                 if (sender == null || sender.equals(cluster.getLocalMember()))
                     return;
-                req.data.run(cluster, new MulticastOperationContext(sender));
+                req.data.run(cluster.getServices().get(0), new MulticastOperationContext(sender));
             }else {
                 LOGGER.warn("multicast server in member {}, couldn't handle package: {}", cluster.getLocalMember(), msg);
             }

@@ -15,7 +15,7 @@ import static com.google.common.base.Preconditions.checkState;
 /**
 * Created by buremba <Burak Emre Kabakcı> on 28/12/14 20:07.
 */
-public class ClusterCheckAndMergeOperation implements Operation<Cluster> {
+public class ClusterCheckAndMergeOperation implements Operation<Cluster.InternalService> {
 
     private final int clusterSize;
     private final long timeRunning;
@@ -26,7 +26,9 @@ public class ClusterCheckAndMergeOperation implements Operation<Cluster> {
     }
 
     @Override
-    public void run(Cluster cluster, OperationContext<Void> ctx) {
+    public void run(Cluster.InternalService service, OperationContext<Void> ctx) {
+        Cluster cluster = service.cluster;
+
         Set<Member> clusterMembers = cluster.getMembers();
         Member masterNode = cluster.getMaster();
         checkState(masterNode.equals(cluster.getLocalMember()), "only master node must execute ClusterCheckAndMergeOperation.");
@@ -56,9 +58,9 @@ public class ClusterCheckAndMergeOperation implements Operation<Cluster> {
             final Set<Member> otherClusterMembers;
             try {
                 otherClusterMembers = cluster.internalBus
-                        .tryAskUntilDone(ctx.getSender(), (service, ctx0) -> {
-                            service.changeCluster(clusterMembers, masterNode, false);
-                            ctx0.reply(service.getMembers());
+                        .tryAskUntilDone(ctx.getSender(), (service0, ctx0) -> {
+                            service0.cluster.changeCluster(clusterMembers, masterNode, false);
+                            ctx0.reply(service0.cluster.getMembers());
                         }, 5, Set.class)
                         .join();
             } catch (CompletionException e) {
@@ -89,8 +91,8 @@ public class ClusterCheckAndMergeOperation implements Operation<Cluster> {
                 cluster.addMemberInternal(ctx.getSender());
 
                 CompletableFuture<Object> f = cluster.internalBus
-                        .tryAskUntilDone(otherClusterMember, (service, ctx0) -> {
-                            service.changeCluster(clusterMembers, masterNode, false);
+                        .tryAskUntilDone(otherClusterMember, (service0, ctx0) -> {
+                            service0.cluster.changeCluster(clusterMembers, masterNode, false);
                             ctx0.reply(true);
                         }, 5).whenComplete((val, ex) -> cluster.removeMemberAsMaster(otherClusterMember, true));
                 mergeClusterRequest.add(f);
@@ -98,7 +100,7 @@ public class ClusterCheckAndMergeOperation implements Operation<Cluster> {
 
             cluster.getMembers().stream()
                     .map(member -> cluster.internalBus
-                            .tryAskUntilDone(member, (service, ctx2) -> service.addMembersInternal(otherMembers), 5)
+                            .tryAskUntilDone(member, (service0, ctx2) -> service.cluster.addMembersInternal(otherMembers), 5)
                             .whenComplete((result, ex) -> {
                                 if (ex != null && ex instanceof TimeoutException)
                                     cluster.removeMemberAsMaster(member, true);

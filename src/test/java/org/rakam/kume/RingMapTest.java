@@ -3,7 +3,7 @@ package org.rakam.kume;
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import org.junit.Test;
-import org.rakam.kume.service.crdt.gcounter.GCounter;
+import org.rakam.kume.service.crdt.counter.GCounterService;
 import org.rakam.kume.service.ringmap.RingMap;
 import org.slf4j.LoggerFactory;
 
@@ -30,7 +30,7 @@ public class RingMapTest extends KumeTest {
         root.setLevel(Level.DEBUG);
 
         ServiceInitializer services = new ServiceInitializer()
-                .add("map", bus -> new RingMap<String, GCounter>(bus, GCounter::combine, 2));
+                .add("map", bus -> new RingMap<String, Long>(bus, GCounterService::merge, 2));
 
         Cluster cluster0 = new ClusterBuilder().services(services).start();
 
@@ -60,7 +60,7 @@ public class RingMapTest extends KumeTest {
     @Test
     public void testMap() throws InterruptedException, TimeoutException, ExecutionException {
         ServiceInitializer services = new ServiceInitializer()
-                .add("map", bus -> new RingMap<String, GCounter>(bus, GCounter::combine, 2));
+                .add("map", bus -> new RingMap<String, Long>(bus, GCounterService::merge, 2));
 
         Cluster cluster0 = new ClusterBuilder().services(services).start();
         Cluster cluster1 = new ClusterBuilder().services(services).start();
@@ -86,7 +86,7 @@ public class RingMapTest extends KumeTest {
     @Test
     public void testMapNewNode() throws InterruptedException, TimeoutException, ExecutionException {
         ServiceInitializer services = new ServiceInitializer()
-                .add("map", bus -> new RingMap<String, GCounter>(bus, GCounter::combine, 2));
+                .add("map", bus -> new RingMap<String, Long>(bus, GCounterService::merge, 2));
 
         Cluster cluster0 = new ClusterBuilder().services(services).start();
 
@@ -109,7 +109,7 @@ public class RingMapTest extends KumeTest {
     @Test
     public void testMapNodeFailure() throws InterruptedException, TimeoutException, ExecutionException {
         ServiceInitializer services = new ServiceInitializer()
-                .add("map", bus -> new RingMap<String, GCounter>(bus, GCounter::combine, 2));
+                .add("map", bus -> new RingMap<String, Long>(bus, GCounterService::merge, 2));
 
         Cluster cluster0 = new ClusterBuilder().services(services).start();
         Cluster cluster1 = new ClusterBuilder().services(services).start();
@@ -155,7 +155,7 @@ public class RingMapTest extends KumeTest {
     @Test
     public void testMapMultipleThreads() throws InterruptedException, TimeoutException, ExecutionException {
         ServiceInitializer services = new ServiceInitializer()
-                .add("map", bus -> new RingMap<String, GCounter>(bus, GCounter::combine, 2));
+                .add("map", bus -> new RingMap<String, Long>(bus, GCounterService::merge, 2));
 
         Cluster cluster0 = new ClusterBuilder().services(services).start();
         new ClusterBuilder().services(services).start();

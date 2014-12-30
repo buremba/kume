@@ -36,7 +36,7 @@ class ChangeRingRequest<K, V> implements Request<RingMap, Map<K, V>> {
 
     @Override
     public void run(RingMap service, OperationContext ctx) {
-        synchronized (service.ctx) {
+        synchronized (service) {
             Map<K, V> moveEntries = new HashMap<>();
 
             ConsistentHashRing serviceRing = service.getRing();
@@ -117,7 +117,7 @@ class ChangeRingRequest<K, V> implements Request<RingMap, Map<K, V>> {
 //            }
 
             Member sender = ctx.getSender();
-            if (sender == null || !sender.equals(service.ctx.getCluster().getLocalMember()))
+            if (sender == null || !sender.equals(service.getContext().getCluster().getLocalMember()))
                 RingMap.LOGGER.debug("moving {} entries [{}, {}] to {}", moveEntries.size(), queryStartToken, queryEndToken, sender);
             else
                 RingMap.LOGGER.debug("moving {} entries [{}, {}] to local", moveEntries.size(), queryStartToken, queryEndToken);

@@ -2,7 +2,6 @@ package org.rakam.kume;
 
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
-import io.netty.util.concurrent.EventExecutor;
 import org.rakam.kume.service.Service;
 import org.rakam.kume.transport.Packet;
 import org.rakam.kume.transport.PacketDecoder;
@@ -34,12 +33,10 @@ public class ServerChannelAdapter extends ChannelInboundHandlerAdapter {
         RemoteOperationContext ctx1 = new RemoteOperationContext(ctx, read.service, read.sequence, eventBus);
         Service service = services.get(read.service);
 
-        EventExecutor executor = eventExecutors.getChild(read.service);
-
         if (o instanceof Request) {
-            executor.execute(() -> service.handle(ctx1, (Request) o));
+            service.handle(eventExecutors, ctx1, (Request) o);
         } else {
-            executor.execute(() -> service.handle(ctx1, o));
+            service.handle(eventExecutors, ctx1, o);
         }
     }
 }

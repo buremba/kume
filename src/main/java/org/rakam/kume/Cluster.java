@@ -57,7 +57,7 @@ import static org.rakam.kume.Cluster.MemberState.MASTER;
 /**
  * Created by buremba <Burak Emre Kabakcı> on 15/11/14 21:41.
  */
-public class Cluster implements Service {
+public class Cluster {
     final static Logger LOGGER = LoggerFactory.getLogger(Cluster.class);
 
     // IO thread for TCP and UDP connections
@@ -72,7 +72,7 @@ public class Cluster implements Service {
     final private List<Service> services;
 
     final private AtomicInteger messageSequence = new AtomicInteger();
-    final protected ServiceContext<Cluster> internalBus = new ServiceContext<>(0, "internal");
+    final protected ServiceContext<InternalService> internalBus;
 
     final ConcurrentHashMap<Member, Channel> clusterConnection = new ConcurrentHashMap<>();
 
@@ -152,7 +152,9 @@ public class Cluster implements Service {
         }
 
         services = new ArrayList<>(serviceGenerators.size() + 16);
-        services.add(this);
+        InternalService internalService = new InternalService(new ServiceContext<>(0), this);
+        services.add(internalService);
+        internalBus = internalService.getContext();
         IntStream.range(0, serviceGenerators.size())
                 .mapToObj(idx -> {
                     ServiceInitializer.Constructor c = serviceGenerators.get(idx);
@@ -267,7 +269,7 @@ public class Cluster implements Service {
                 } else {
                     Member localMember = getLocalMember();
                     internalBus.send(master, (masterCluster, ctx) ->
-                            masterCluster.heartbeatMap.put(localMember, System.currentTimeMillis()));
+                            masterCluster.cluster.heartbeatMap.put(localMember, System.currentTimeMillis()));
                 }
             }
 
@@ -289,8 +291,8 @@ public class Cluster implements Service {
         Map<Member, Boolean> map = new ConcurrentHashMap<>();
         CompletableFuture<Boolean> future = new CompletableFuture<>();
         int cursor = lastVotedCursor++;
-        Map<Member, CompletableFuture<Boolean>> m = internalBus.askAllMembers((cluster, ctx) -> {
-            ctx.reply(cluster.lastVotedCursor++ == cursor - 1);
+        Map<Member, CompletableFuture<Boolean>> m = internalBus.askAllMembers((service, ctx) -> {
+            ctx.reply(service.cluster.lastVotedCursor++ == cursor - 1);
         });
 
         m.forEach((member, resultFuture) -> {
@@ -311,7 +313,7 @@ public class Cluster implements Service {
         if (future.join()) {
             memberState = MASTER;
             Member localMember = this.localMember;
-            internalBus.sendAllMembers((cluster, ctx) -> cluster.changeMaster(localMember));
+            internalBus.sendAllMembers((service, ctx) -> service.cluster.changeMaster(localMember));
         }
     }
 
@@ -396,11 +398,11 @@ public class Cluster implements Service {
         int maxSize = Short.MAX_VALUE * 2;
         checkState(services.size() < maxSize, "Maximum number of allowed services is %s", maxSize);
 
-        Request<Cluster, Boolean> createServiceRequest = (service, ctx) -> {
+        Request<InternalService, Boolean> createServiceRequest = (service, ctx) -> {
             T s = ser.newInstance(new ServiceContext(services.size(), name));
-            service.services.add(s);
+            service.cluster.services.add(s);
             if(name!=null)
-                service.serviceNameMap.put(name, s);
+                service.cluster.serviceNameMap.put(name, s);
             ctx.reply(true);
         };
 
@@ -519,25 +521,20 @@ public class Cluster implements Service {
         return Collections.unmodifiableList(services);
     }
 
-    @Override
-    public void onClose() {
-
-    }
-
-    public static class HeartbeatRequest implements Operation<Cluster> {
+    public static class HeartbeatRequest implements Operation<InternalService> {
 
         @Override
-        public void run(Cluster cluster, OperationContext ctx) {
+        public void run(InternalService service, OperationContext ctx) {
             Member sender = ctx.getSender();
-            Member masterMember = cluster.getMaster();
+            Member masterMember = service.cluster.getMaster();
             if(sender == null) {
                 return;
             }
             if (sender.equals(masterMember)) {
-                cluster.lastContactedTimeMaster = System.currentTimeMillis();
+                service.cluster.lastContactedTimeMaster = System.currentTimeMillis();
             } else {
-                if (!cluster.getMembers().contains(sender)) {
-                    cluster.changeMaster(ctx.getSender());
+                if (!service.cluster.getMembers().contains(sender)) {
+                    service.cluster.changeMaster(ctx.getSender());
                 }
             }
         }
@@ -551,6 +548,20 @@ public class Cluster implements Service {
         server.config().setAutoRead(true);
     }
 
+    public class InternalService extends Service<InternalService> {
+        protected final Cluster cluster;
+
+        private InternalService(ServiceContext<InternalService> ctx, Cluster cluster) {
+            super(ctx);
+            this.cluster = cluster;
+        }
+
+        @Override
+        public void onClose() {
+
+        }
+    }
+
     public class ServiceContext<T extends Service> {
         private final String serviceName;
         private final int service;
@@ -558,7 +569,10 @@ public class Cluster implements Service {
         public ServiceContext(int service, String serviceName) {
             this.service = service;
             this.serviceName = serviceName;
-
+        }
+        public ServiceContext(int service) {
+            this.service = service;
+            this.serviceName = null;
         }
 
         public void send(Member server, Object bytes) {
@@ -715,31 +729,33 @@ public class Cluster implements Service {
 
     }
 
-    public static class JoinOperation implements Operation<Cluster> {
+    public static class JoinOperation implements Operation<InternalService> {
 
         @Override
-        public void run(Cluster cluster, OperationContext<Void> ctx) {
-            synchronized (cluster) {
+        public void run(InternalService service, OperationContext<Void> ctx) {
+            synchronized (service.cluster) {
                 Channel channel;
                 Member newMember = ctx.getSender();
                 try {
-                    channel = cluster.connectServer(newMember.address);
+                    channel = service.cluster.connectServer(newMember.address);
                 } catch (InterruptedException e) {
                     return;
                 }
-                cluster.clusterConnection.put(newMember, channel);
-                cluster.addMemberInternal(newMember);
+                service.cluster.clusterConnection.put(newMember, channel);
+                service.cluster.addMemberInternal(newMember);
 
-                Member masterMember = cluster.getMaster();
-                Set<Member> members = cluster.getMembers();
-                Request<Cluster, Object> changeClusterOfNewMember = (service, ctx0) -> service.changeCluster(members, masterMember, true);
-                Request<Cluster, Object> addNewMember = (service, ctx0) -> service.addMemberInternal(newMember);
+                Member masterMember = service.cluster.getMaster();
+                Set<Member> members = service.cluster.getMembers();
+                Request<InternalService, Object> changeClusterOfNewMember = (service0, ctx0) ->
+                        service0.cluster.changeCluster(members, masterMember, true);
+                Request<InternalService, Object> addNewMember = (service0, ctx0) ->
+                        service0.cluster.addMemberInternal(newMember);
 
-                for (Member member : cluster.getMembers()) {
-                    cluster.internalBus.tryAskUntilDone(member, member.equals(newMember) ? changeClusterOfNewMember : addNewMember, 5)
+                for (Member member : service.cluster.getMembers()) {
+                    service.cluster.internalBus.tryAskUntilDone(member, member.equals(newMember) ? changeClusterOfNewMember : addNewMember, 5)
                             .whenComplete((result, ex) -> {
                                 if (ex != null && ex instanceof TimeoutException) {
-                                    cluster.removeMemberAsMaster(member, true);
+                                    service.cluster.removeMemberAsMaster(member, true);
                                 }
                             });
                 }

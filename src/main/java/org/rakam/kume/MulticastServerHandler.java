@@ -66,7 +66,7 @@ public class MulticastServerHandler {
         ByteBuf buf = Unpooled.wrappedBuffer(Serializer.toByteBuf(new MulticastPacket(req, localMember)));
         server.writeAndFlush(new DatagramPacket(buf, address, localMember.address));
     }
-    public void send(InetSocketAddress address, Operation<Cluster> req) {
+    public void send(InetSocketAddress address, Operation<Cluster.InternalService> req) {
         ByteBuf buf = Unpooled.wrappedBuffer(Serializer.toByteBuf(new MulticastPacket(req, localMember)));
         server.writeAndFlush(new DatagramPacket(buf, address, localMember.address));
     }
