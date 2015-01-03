@@ -1,7 +1,8 @@
-package org.rakam.kume;
+package org.rakam.kume.transport;
 
 import io.netty.channel.ChannelHandlerContext;
-import org.rakam.kume.transport.Packet;
+import org.rakam.kume.Cluster;
+import org.rakam.kume.Member;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

@@ -1,6 +1,8 @@
 package org.rakam.kume;
 
 import io.netty.channel.Channel;
+import org.rakam.kume.transport.Operation;
+import org.rakam.kume.transport.OperationContext;
 
 import java.util.ArrayList;
 import java.util.HashSet;

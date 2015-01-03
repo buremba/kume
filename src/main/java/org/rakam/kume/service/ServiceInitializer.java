@@ -1,6 +1,4 @@
-package org.rakam.kume;
-
-import org.rakam.kume.service.ServiceConstructor;
+package org.rakam.kume.service;
 
 import java.util.ArrayList;
 
@@ -15,8 +13,8 @@ public class ServiceInitializer extends ArrayList<ServiceInitializer.Constructor
     }
 
     public static class Constructor {
-        final String name;
-        final ServiceConstructor constructor;
+        public final String name;
+        public final ServiceConstructor constructor;
 
         public Constructor(String name, ServiceConstructor constructor) {
             this.constructor = constructor;

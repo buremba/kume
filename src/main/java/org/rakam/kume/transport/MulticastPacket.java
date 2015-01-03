@@ -5,7 +5,7 @@ import com.esotericsoftware.kryo.KryoSerializable;
 import com.esotericsoftware.kryo.io.Input;
 import com.esotericsoftware.kryo.io.Output;
 import org.rakam.kume.Member;
-import org.rakam.kume.Operation;
+import org.rakam.kume.transport.Operation;
 
 
 /**

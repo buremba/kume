@@ -2,6 +2,8 @@ package org.rakam.kume;
 
 import org.junit.Test;
 import org.rakam.kume.service.Service;
+import org.rakam.kume.service.ServiceInitializer;
+import org.rakam.kume.transport.OperationContext;
 
 import java.util.concurrent.CountDownLatch;
 

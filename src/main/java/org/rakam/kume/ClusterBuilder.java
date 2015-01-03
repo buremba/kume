@@ -1,5 +1,6 @@
 package org.rakam.kume;
 
+import org.rakam.kume.service.ServiceInitializer;
 import org.rakam.kume.util.NetworkUtil;
 
 import java.net.InetSocketAddress;

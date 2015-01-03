@@ -1,6 +1,7 @@
 package org.rakam.kume;
 
 import org.junit.Test;
+import org.rakam.kume.service.ServiceInitializer;
 import org.rakam.kume.service.crdt.counter.GCounterService;
 import org.rakam.kume.service.ringmap.RingMap;
 import org.rakam.kume.util.ConsistentHashRing;

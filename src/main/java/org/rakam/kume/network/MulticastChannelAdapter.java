@@ -1,4 +1,4 @@
-package org.rakam.kume;
+package org.rakam.kume.network;
 
 import com.esotericsoftware.kryo.KryoException;
 import io.netty.buffer.ByteBuf;
@@ -6,6 +6,9 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.channel.socket.DatagramPacket;
 import io.netty.util.ReferenceCountUtil;
+import org.rakam.kume.Cluster;
+import org.rakam.kume.Member;
+import org.rakam.kume.transport.MulticastOperationContext;
 import org.rakam.kume.transport.MulticastPacket;
 import org.rakam.kume.transport.serialization.Serializer;
 import org.slf4j.Logger;

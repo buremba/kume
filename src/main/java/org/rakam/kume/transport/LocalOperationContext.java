@@ -1,4 +1,6 @@
-package org.rakam.kume;
+package org.rakam.kume.transport;
+
+import org.rakam.kume.Member;
 
 import java.util.concurrent.CompletableFuture;
 

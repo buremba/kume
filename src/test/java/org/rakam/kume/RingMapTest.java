@@ -3,6 +3,7 @@ package org.rakam.kume;
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import org.junit.Test;
+import org.rakam.kume.service.ServiceInitializer;
 import org.rakam.kume.service.crdt.counter.GCounterService;
 import org.rakam.kume.service.ringmap.RingMap;
 import org.slf4j.LoggerFactory;

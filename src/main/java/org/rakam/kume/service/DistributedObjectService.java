@@ -3,9 +3,9 @@ package org.rakam.kume.service;
 import org.rakam.kume.Cluster;
 import org.rakam.kume.Member;
 import org.rakam.kume.MembershipListener;
-import org.rakam.kume.Operation;
-import org.rakam.kume.OperationContext;
-import org.rakam.kume.Request;
+import org.rakam.kume.transport.Operation;
+import org.rakam.kume.transport.OperationContext;
+import org.rakam.kume.transport.Request;
 import org.rakam.kume.util.ConsistentHashRing;
 
 import java.util.Collections;

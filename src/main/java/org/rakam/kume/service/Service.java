@@ -1,8 +1,8 @@
 package org.rakam.kume.service;
 
-import org.rakam.kume.NioEventLoopGroupArray;
-import org.rakam.kume.OperationContext;
-import org.rakam.kume.Request;
+import org.rakam.kume.util.NioEventLoopGroupArray;
+import org.rakam.kume.transport.OperationContext;
+import org.rakam.kume.transport.Request;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

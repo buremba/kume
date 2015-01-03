@@ -1,4 +1,4 @@
-package org.rakam.kume;
+package org.rakam.kume.util;
 
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.util.concurrent.EventExecutor;

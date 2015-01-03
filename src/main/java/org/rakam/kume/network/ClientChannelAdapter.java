@@ -1,4 +1,4 @@
-package org.rakam.kume;
+package org.rakam.kume.network;
 
 import com.google.common.cache.Cache;
 import io.netty.channel.ChannelHandlerContext;

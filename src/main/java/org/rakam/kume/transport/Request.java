@@ -1,6 +1,7 @@
-package org.rakam.kume;
+package org.rakam.kume.transport;
 
 import org.rakam.kume.service.Service;
+import org.rakam.kume.transport.OperationContext;
 
 import java.io.Serializable;
 

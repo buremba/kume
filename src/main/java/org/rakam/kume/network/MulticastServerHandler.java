@@ -1,4 +1,4 @@
-package org.rakam.kume;
+package org.rakam.kume.network;
 
 import io.netty.bootstrap.Bootstrap;
 import io.netty.buffer.ByteBuf;
@@ -10,6 +10,9 @@ import io.netty.channel.socket.DatagramPacket;
 import io.netty.channel.socket.InternetProtocolFamily;
 import io.netty.channel.socket.nio.NioDatagramChannel;
 import io.netty.util.NetUtil;
+import org.rakam.kume.Cluster;
+import org.rakam.kume.Member;
+import org.rakam.kume.transport.Operation;
 import org.rakam.kume.transport.MulticastPacket;
 import org.rakam.kume.transport.serialization.Serializer;
 import org.slf4j.Logger;
@@ -64,11 +67,11 @@ public class MulticastServerHandler {
 
     public void sendMulticast(Operation req) {
         ByteBuf buf = Unpooled.wrappedBuffer(Serializer.toByteBuf(new MulticastPacket(req, localMember)));
-        server.writeAndFlush(new DatagramPacket(buf, address, localMember.address));
+        server.writeAndFlush(new DatagramPacket(buf, address, localMember.getAddress()));
     }
     public void send(InetSocketAddress address, Operation<Cluster.InternalService> req) {
         ByteBuf buf = Unpooled.wrappedBuffer(Serializer.toByteBuf(new MulticastPacket(req, localMember)));
-        server.writeAndFlush(new DatagramPacket(buf, address, localMember.address));
+        server.writeAndFlush(new DatagramPacket(buf, address, localMember.getAddress()));
     }
 
     public void close() throws InterruptedException {

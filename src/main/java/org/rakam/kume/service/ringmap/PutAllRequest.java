@@ -1,7 +1,7 @@
 package org.rakam.kume.service.ringmap;
 
-import org.rakam.kume.OperationContext;
-import org.rakam.kume.Request;
+import org.rakam.kume.transport.OperationContext;
+import org.rakam.kume.transport.Request;
 
 import java.util.List;
 import java.util.Map;
