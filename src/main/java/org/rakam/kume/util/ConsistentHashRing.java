@@ -2,10 +2,13 @@ package org.rakam.kume.util;
 
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
+import com.google.common.hash.Funnel;
 import com.google.common.hash.HashFunction;
+import com.google.common.hash.Hasher;
 import com.google.common.hash.Hashing;
+import com.google.common.hash.PrimitiveSink;
 import org.rakam.kume.Member;
-import org.rakam.kume.transport.serialization.Serializer;
+import org.rakam.kume.transport.serialization.SinkSerializable;
 
 import java.nio.charset.Charset;
 import java.util.ArrayList;
@@ -30,13 +33,12 @@ public class ConsistentHashRing {
     private final Bucket[] buckets;
     private static final HashFunction hashFunction = Hashing.murmur3_128();
     private final int replicationFactor;
-
-
-    public static boolean isTokenBetween(long hash, long start, long end) {
-        if (start <= end) return hash >= start && hash <= end;
-            // we're in the start point of ring
-        else return hash > start || hash < end;
-    }
+    private static final Funnel keyFunnel = new Funnel<SinkSerializable>() {
+        @Override
+        public void funnel(SinkSerializable from, PrimitiveSink into) {
+            from.writeTo(into);
+        }
+    };
 
     public ConsistentHashRing(Collection<Member> members, int bucketPerNode, int replicationFactor) {
         this.bucketPerNode = bucketPerNode;
@@ -67,6 +69,16 @@ public class ConsistentHashRing {
             str.append("[" + range.start + "-" + range.end + ", " + members.size() + " members]");
         });
         return str.toString();
+    }
+
+    public static boolean isTokenBetween(long hash, long start, long end) {
+        if (start <= end) return hash >= start && hash <= end;
+            // we're in the start point of ring
+        else return hash > start || hash < end;
+    }
+
+    public static Hasher newHasher() {
+        return hashFunction.newHasher();
     }
 
     public Map<TokenRange, List<Member>> getBuckets() {
@@ -139,8 +151,11 @@ public class ConsistentHashRing {
             return hash((long) hash);
         if(hash instanceof Integer)
             return hash((int) hash);
-        else
-            return hashFunction.hashBytes(Serializer.toByteArray(hash)).asLong();
+        if(hash instanceof SinkSerializable) {
+            return hashFunction.hashObject(hash, keyFunnel).asLong();
+        }
+
+        throw new IllegalArgumentException("map key should be one of [String, Long, Integer or com.google.common.hash.Funnel]");
     }
 
     public static long hash(byte[] hash) {
@@ -349,10 +364,6 @@ public class ConsistentHashRing {
     public static class Bucket {
         public long token;
 
-        //        @CollectionSerializer.BindCollection(
-//                elementSerializer = UnmodifiableCollectionsSerializer.class,
-//                elementClass = Member.class,
-//                elementsCanBeNull = false)
         public ArrayList<Member> members;
 
         public Bucket(Set<Member> members, long token) {

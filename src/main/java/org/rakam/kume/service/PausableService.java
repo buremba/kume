@@ -8,13 +8,14 @@ import java.util.ArrayDeque;
 /**
  * Created by buremba <Burak Emre Kabakcı> on 24/11/14 02:12.
  */
-public abstract class PausableService<T extends Service> extends Service<T> {
+public abstract class PausableService<T extends Service> extends Service {
+    private final Cluster.ServiceContext<T> ctx;
     ArrayDeque<FutureRequest> objectQueue = new ArrayDeque();
     ArrayDeque<Runnable> runnableQueue = new ArrayDeque();
     private volatile boolean paused  = false;
 
     public PausableService(Cluster.ServiceContext<T> ctx) {
-        super(ctx);
+        this.ctx = ctx;
     }
 
     @Override
@@ -36,6 +37,9 @@ public abstract class PausableService<T extends Service> extends Service<T> {
         return false;
     }
 
+    public Cluster.ServiceContext<T> getContext() {
+        return ctx;
+    }
 
     public boolean isPaused() {
         return paused;

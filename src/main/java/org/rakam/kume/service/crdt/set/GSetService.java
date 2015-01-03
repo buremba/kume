@@ -4,13 +4,14 @@ import org.rakam.kume.Cluster;
 import org.rakam.kume.service.DistributedObjectServiceAdapter;
 
 import java.util.Set;
+import java.util.function.Supplier;
 
 /**
  * Created by buremba <Burak Emre Kabakcı> on 28/12/14 21:26.
  */
 public class GSetService<T> extends DistributedObjectServiceAdapter<GSetService<T>, Set<T>> {
-    public GSetService(Cluster.ServiceContext clusterContext, Set<T> value, int replicationFactor) {
-        super(clusterContext, value, replicationFactor);
+    public GSetService(Cluster.ServiceContext clusterContext, Supplier<Set<T>> value, int replicationFactor) {
+        super(clusterContext, value.get(), replicationFactor);
     }
 
     public void add(T entry) {
@@ -32,5 +33,16 @@ public class GSetService<T> extends DistributedObjectServiceAdapter<GSetService<
         int size = value.size();
         value.addAll(val);
         return value.size() == size;
+    }
+
+    public static <T> Set<T> merge(Set<T> val0, Set<T> val1) {
+        if(val0.size() > val1.size()) {
+            val0.addAll(val1);
+            return val0;
+
+        } else {
+            val1.addAll(val0);
+            return val1;
+        }
     }
 }

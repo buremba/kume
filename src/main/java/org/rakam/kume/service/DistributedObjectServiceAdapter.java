@@ -16,7 +16,7 @@ public abstract class DistributedObjectServiceAdapter<C extends DistributedObjec
     }
 
     public void process(Consumer<T> processor) {
-        getOwnedMembers().forEach(member -> serviceContext.send(member, (service, ctx) -> processor.accept(service.value)));
+        getOwnedMembers().forEach(member -> getContext().send(member, (service, ctx) -> processor.accept(service.value)));
     }
 
     @Override

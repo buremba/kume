@@ -50,7 +50,7 @@ public class ClusterBuilder {
         return serverAddress;
     }
 
-    public Cluster start() throws InterruptedException {
+    public Cluster start() {
         if (members == null)
             members = new ArrayList<>();
 

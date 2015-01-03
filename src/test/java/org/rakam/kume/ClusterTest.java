@@ -29,17 +29,18 @@ public class ClusterTest extends KumeTest {
         latch.await();
     }
 
-    private static class MyService extends Service<MyService> {
+    private static class MyService extends Service {
 
         private final CountDownLatch latch;
+        private final Cluster.ServiceContext<MyService> ctx;
 
         public MyService(Cluster.ServiceContext<MyService> bus, CountDownLatch latch) {
-            super(bus);
+            ctx = bus;
             this.latch = latch;
         }
 
         public void pingAll() {
-            getContext().sendAllMembers(1);
+            ctx.sendAllMembers(1);
         }
 
         @Override

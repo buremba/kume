@@ -98,7 +98,7 @@ public class Cluster {
     private ConcurrentMap<InetSocketAddress, Integer> pendingUserVotes = CacheBuilder.newBuilder().expireAfterWrite(100, TimeUnit.SECONDS).<InetSocketAddress, Integer>build().asMap();
     private MemberState memberState;
 
-    public Cluster(Collection<Member> members, ServiceInitializer serviceGenerators, InetSocketAddress serverAddress, boolean mustJoinCluster) throws InterruptedException {
+    public Cluster(Collection<Member> members, ServiceInitializer serviceGenerators, InetSocketAddress serverAddress, boolean mustJoinCluster) {
         clusterStartTime = System.currentTimeMillis();
         this.members = new HashSet<>(members);
 
@@ -121,12 +121,16 @@ public class Cluster {
                     }
                 }).bind(serverAddress);
 
-        server = bind.sync()
-                .addListener(future -> {
-                    if (!future.isSuccess()) {
-                        LOGGER.error("Failed to bind {}", bind.channel().localAddress());
-                    }
-                }).channel();
+        try {
+            server = bind.sync()
+                    .addListener(future -> {
+                        if (!future.isSuccess()) {
+                            LOGGER.error("Failed to bind {}", bind.channel().localAddress());
+                        }
+                    }).channel();
+        } catch (InterruptedException e) {
+            throw new IllegalStateException("Failed to bind TCP "+bind.channel().localAddress());
+        }
 
         Runtime.getRuntime().addShutdownHook(new Thread() {
             public void run() {
@@ -142,8 +146,12 @@ public class Cluster {
         master = localMember;
 
         InetSocketAddress multicastAddress = new InetSocketAddress("224.0.67.67", 5001);
-        multicastServer = new MulticastServerHandler(this, multicastAddress)
-                .start();
+        try {
+            multicastServer = new MulticastServerHandler(this, multicastAddress)
+                    .start();
+        } catch (InterruptedException e) {
+            throw new IllegalStateException("Failed to bind UDP "+bind.channel().localAddress());
+        }
 
         LOGGER.info("{} started , listening UDP multicast server {}", localMember, multicastAddress);
 
@@ -242,7 +250,7 @@ public class Cluster {
         }
     }
 
-    private void scheduleClusteringTask() throws InterruptedException {
+    private void scheduleClusteringTask() {
         workerGroup.schedule(() -> {
 
         }, 10, TimeUnit.MILLISECONDS);
@@ -393,14 +401,22 @@ public class Cluster {
         return getService(serviceName);
     }
 
-    public <T extends Service> T createService(String name, ServiceConstructor<T> ser) {
+    public <T extends Service> T createOrGetService(String name, ServiceConstructor<T> ser) {
         checkNotNull(ser, "null is not allowed for service constructor");
+        Service existingService = serviceNameMap.get(name);
+        if(existingService != null)
+            return (T) existingService;
         int maxSize = Short.MAX_VALUE * 2;
         checkState(services.size() < maxSize, "Maximum number of allowed services is %s", maxSize);
 
+        int id = services.size();
+
         Request<InternalService, Boolean> createServiceRequest = (service, ctx) -> {
             T s = ser.newInstance(new ServiceContext(services.size(), name));
-            service.cluster.services.add(s);
+            // service is not thread-safe
+            synchronized (service.cluster.services) {
+                service.cluster.services.add(s);
+            }
             if(name!=null)
                 service.cluster.serviceNameMap.put(name, s);
             ctx.reply(true);
@@ -415,11 +431,11 @@ public class Cluster {
                     });
         }
 
-        return (T) serviceNameMap.get(name);
+        return (T) services.get(id);
     }
 
     public <T extends Service> T createService(ServiceConstructor<T> ser) {
-        return createService(null, ser);
+        return createOrGetService(null, ser);
     }
 
     public boolean destroyService(String serviceName) {
@@ -548,12 +564,17 @@ public class Cluster {
         server.config().setAutoRead(true);
     }
 
-    public class InternalService extends Service<InternalService> {
+    public class InternalService extends Service {
         protected final Cluster cluster;
+        private final ServiceContext<InternalService> ctx;
 
         private InternalService(ServiceContext<InternalService> ctx, Cluster cluster) {
-            super(ctx);
+            this.ctx = ctx;
             this.cluster = cluster;
+        }
+
+        public ServiceContext<InternalService> getContext() {
+            return ctx;
         }
 
         @Override
@@ -577,7 +598,7 @@ public class Cluster {
 
         public void send(Member server, Object bytes) {
             if (server.equals(localMember)) {
-                LocalOperationContext ctx1 = new LocalOperationContext(null, localMember);
+                LocalOperationContext ctx1 = new LocalOperationContext(null, service, localMember);
                 // move to an executor handler
                 services.get(service).handle(ctx1, bytes);
             } else {
@@ -589,7 +610,7 @@ public class Cluster {
             if (server.equals(localMember)) {
                 CompletableFuture<R> f = new CompletableFuture<>();
                 Service s = services.get(service);
-                LocalOperationContext ctx = new LocalOperationContext(f, localMember);
+                LocalOperationContext ctx = new LocalOperationContext(f, service, localMember);
                 workerGroup.execute(() -> s.handle(ctx, request));
             } else {
                 sendInternal(getConnection(server), request, service);
@@ -610,7 +631,7 @@ public class Cluster {
             if (includeThisMember) {
                 CompletableFuture<R> f = new CompletableFuture<>();
                 Service s = services.get(service);
-                LocalOperationContext ctx = new LocalOperationContext(f, localMember);
+                LocalOperationContext ctx = new LocalOperationContext(f, service, localMember);
                 workerGroup.execute(() -> s.handle(ctx, bytes));
             }
         }
@@ -621,7 +642,7 @@ public class Cluster {
             if (includeThisMember) {
                 CompletableFuture<R> f = new CompletableFuture<>();
                 Service s = services.get(service);
-                LocalOperationContext ctx = new LocalOperationContext(f, localMember);
+                LocalOperationContext ctx = new LocalOperationContext(f, service, localMember);
                 workerGroup.execute(() -> s.handle(ctx, bytes));
             }
         }
@@ -637,7 +658,7 @@ public class Cluster {
         public <R> CompletableFuture<R> ask(Member server, Object bytes) {
             if (server.equals(localMember)) {
                 CompletableFuture<R> future = new CompletableFuture<>();
-                LocalOperationContext ctx1 = new LocalOperationContext(future, localMember);
+                LocalOperationContext ctx1 = new LocalOperationContext(future, service, localMember);
                 // move to an executor handler
                 services.get(service).handle(ctx1, bytes);
                 return future;
@@ -649,7 +670,7 @@ public class Cluster {
         public <R> CompletableFuture<R> ask(Member server, Request<T, R> request) {
             if (server.equals(localMember)) {
                 CompletableFuture<R> future = new CompletableFuture<>();
-                LocalOperationContext ctx1 = new LocalOperationContext(future, localMember);
+                LocalOperationContext ctx1 = new LocalOperationContext(future, service, localMember);
                 request.run((T) services.get(service), ctx1);
                 return future;
             } else {
@@ -671,7 +692,7 @@ public class Cluster {
             if (includeThisMember) {
                 CompletableFuture<R> f = new CompletableFuture<>();
                 Service s = services.get(service);
-                LocalOperationContext ctx = new LocalOperationContext(f, localMember);
+                LocalOperationContext ctx = new LocalOperationContext(f, service, localMember);
                 workerGroup.execute(() -> s.handle(ctx, bytes));
                 m.put(localMember, f);
             }
@@ -685,7 +706,7 @@ public class Cluster {
             if (includeThisMember) {
                 CompletableFuture<R> f = new CompletableFuture<>();
                 Service s = services.get(service);
-                LocalOperationContext ctx = new LocalOperationContext(f, localMember);
+                LocalOperationContext ctx = new LocalOperationContext(f, service, localMember);
                 workerGroup.execute(() -> s.handle(ctx, bytes));
                 m.put(localMember, f);
             }

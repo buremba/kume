@@ -11,6 +11,7 @@ import org.rakam.kume.util.ConsistentHashRing;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -20,9 +21,12 @@ import java.util.stream.Stream;
 /**
  * Created by buremba <Burak Emre Kabakcı> on 19/12/14 04:25.
  */
-public abstract class DistributedObjectService<C extends DistributedObjectService, T> extends Service<C> implements MembershipListener {
+public abstract class DistributedObjectService<C extends DistributedObjectService, T> extends Service implements MembershipListener {
     final int replicationFactor;
+    private final Cluster.ServiceContext<C> ctx;
     private List<Member> ownedMembers;
+
+    static Random random = new Random();
 
     public List<Member> getOwnedMembers() {
         return Collections.unmodifiableList(ownedMembers);
@@ -34,27 +38,31 @@ public abstract class DistributedObjectService<C extends DistributedObjectServic
     private static Map<Cluster, ConsistentHashRing> ringStore = new ConcurrentHashMap<>();
 
     public DistributedObjectService(Cluster.ServiceContext clusterContext, int replicationFactor) {
-        super(clusterContext);
+        this.ctx = clusterContext;
         this.replicationFactor = replicationFactor;
-        Cluster cluster = serviceContext.getCluster();
+        Cluster cluster = ctx.getCluster();
         cluster.addMembershipListener(this);
 
-        ConsistentHashRing ring = ringStore.computeIfAbsent(serviceContext.getCluster(),
+        ConsistentHashRing ring = ringStore.computeIfAbsent(ctx.getCluster(),
                 k -> new ConsistentHashRing(cluster.getMembers(), 1, replicationFactor));
         arrangePartitions(ring);
-        ownedMembers = ring.findBucket(serviceContext.serviceName()).members;
+        ownedMembers = ring.findBucket(ctx.serviceName()).members;
+    }
+
+    public Cluster.ServiceContext<C> getContext() {
+        return ctx;
     }
 
     private void arrangePartitions(ConsistentHashRing ring) {
         List<Member> oldOwnedMembers = ownedMembers;
-        ownedMembers = ring.findBucket(serviceContext.serviceId()).members;
-        Member localMember = serviceContext.getCluster().getLocalMember();
+        ownedMembers = ring.findBucket(ctx.serviceId()).members;
+        Member localMember = ctx.getCluster().getLocalMember();
 
         if (oldOwnedMembers.contains(localMember) && !ownedMembers.contains(localMember)) {
             T counterValue = getLocal();
             setLocal(null);
             ownedMembers.stream()
-                    .map(member -> serviceContext.tryAskUntilDone(member, new MergeRequest<>(counterValue), 5));
+                    .map(member -> ctx.tryAskUntilDone(member, new MergeRequest<>(counterValue), 5));
         } else if (!oldOwnedMembers.contains(localMember) && ownedMembers.contains(localMember)) {
             // find a way to wait for the counter from other replicas before serving the requests.
             // we may use PausableService but it comes with a big overhead per GCounterService because of the queues in PausableService.
@@ -66,7 +74,7 @@ public abstract class DistributedObjectService<C extends DistributedObjectServic
         AtomicReference<T> c = new AtomicReference<>();
         CompletableFuture<T>[] map = ownedMembers.stream()
                 .map(member -> {
-                    CompletableFuture<T> ask = serviceContext.ask(member, (service, ctx) -> service.getLocal());
+                    CompletableFuture<T> ask = ctx.ask(member, (service, ctx) -> service.getLocal());
                     return ask
                             .thenAccept(x -> c.getAndAccumulate(x, (t, t2) -> {
                                 this.mergeIn(t2);
@@ -81,11 +89,11 @@ public abstract class DistributedObjectService<C extends DistributedObjectServic
 
     @Override
     public void memberAdded(Member member) {
-        ConsistentHashRing ring = ringStore.get(serviceContext.getCluster());
+        ConsistentHashRing ring = ringStore.get(ctx.getCluster());
 
         if(!ring.getMembers().contains(member)) {
             ConsistentHashRing newRing = ring.addNode(member);
-            ringStore.put(serviceContext.getCluster(), newRing);
+            ringStore.put(ctx.getCluster(), newRing);
             arrangePartitions(newRing);
         }else {
             // ring is already modified by another GCounterService
@@ -95,11 +103,11 @@ public abstract class DistributedObjectService<C extends DistributedObjectServic
 
     @Override
     public void memberRemoved(Member member) {
-        ConsistentHashRing ring = ringStore.get(serviceContext.getCluster());
+        ConsistentHashRing ring = ringStore.get(ctx.getCluster());
 
         if(ring.getMembers().contains(member)) {
             ConsistentHashRing newRing = ring.removeNode(member);
-            ringStore.put(serviceContext.getCluster(), newRing);
+            ringStore.put(ctx.getCluster(), newRing);
             arrangePartitions(newRing);
         }else {
             // ring is already modified by another GCounterService
@@ -109,7 +117,7 @@ public abstract class DistributedObjectService<C extends DistributedObjectServic
 
     @Override
     public void clusterMerged(Set<Member> newMembers) {
-        ConsistentHashRing ring = ringStore.get(serviceContext.getCluster());
+        ConsistentHashRing ring = ringStore.get(ctx.getCluster());
 
         Set<Member> members = ring.getMembers();
 
@@ -117,7 +125,7 @@ public abstract class DistributedObjectService<C extends DistributedObjectServic
             for (Member newMember : newMembers) {
                 ring = ring.addNode(newMember);
             }
-            ringStore.put(serviceContext.getCluster(), ring);
+            ringStore.put(ctx.getCluster(), ring);
             arrangePartitions(ring);
         }else {
             // ring is already modified by another GCounterService
@@ -148,12 +156,21 @@ public abstract class DistributedObjectService<C extends DistributedObjectServic
     }
 
     protected void sendToReplicas(Operation<C> req) {
-        ownedMembers.forEach(member -> serviceContext.send(member, req));
+        ownedMembers.forEach(member -> ctx.send(member, req));
     }
 
     protected <R> Stream<CompletableFuture<R>> askReplicas(Request<C, R> req) {
-        return ownedMembers.stream().map(member -> serviceContext.ask(member, req));
+        return ownedMembers.stream().map(member -> ctx.ask(member, req));
     }
+
+    protected <R> CompletableFuture<R> askRandomReplica(Request<C, R> req) {
+        Member member = ctx.getCluster().getLocalMember();
+        if(!ownedMembers.contains(member)) {
+            member = ownedMembers.get(random.nextInt(ownedMembers.size()));
+        }
+        return ctx.ask(member, req);
+    }
+
     protected <R> Stream<CompletableFuture<R>> askReplicas(Request<C, R> req, Class<R> clazz) {
         return askReplicas(req);
     }

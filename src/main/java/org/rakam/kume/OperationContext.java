@@ -6,4 +6,5 @@ package org.rakam.kume;
 public interface OperationContext<R> {
     public void reply(R obj);
     public Member getSender();
+    int serviceId();
 }

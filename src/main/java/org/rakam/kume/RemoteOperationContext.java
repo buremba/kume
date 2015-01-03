@@ -44,4 +44,9 @@ public class RemoteOperationContext implements OperationContext {
         ctx.writeAndFlush(msg);
     }
 
+    @Override
+    public int serviceId() {
+        return serviceId;
+    }
+
 }

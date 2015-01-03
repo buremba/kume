@@ -16,6 +16,10 @@ public class GCounterService extends DistributedObjectServiceAdapter<GCounterSer
         super(clusterContext, l, replicationFactor);
     }
 
+    public GCounterService(Cluster.ServiceContext clusterContext, int replicationFactor) {
+        super(clusterContext, 0L, replicationFactor);
+    }
+
     public void add(long l) {
         checkArgument(l > 0, "value (%s) must be a positive integer", l);
         sendToReplicas((service, ctx) -> service.value += l);
