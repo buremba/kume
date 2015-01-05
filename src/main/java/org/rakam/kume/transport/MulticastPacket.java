@@ -5,7 +5,6 @@ import com.esotericsoftware.kryo.KryoSerializable;
 import com.esotericsoftware.kryo.io.Input;
 import com.esotericsoftware.kryo.io.Output;
 import org.rakam.kume.Member;
-import org.rakam.kume.transport.Operation;
 
 
 /**
@@ -24,13 +23,13 @@ public class MulticastPacket implements KryoSerializable {
 
     @Override
     public void write(Kryo kryo, Output output) {
-        kryo.writeObject(output, data);
+        kryo.writeClassAndObject(output, data);
         kryo.writeObject(output, sender);
     }
 
     @Override
     public void read(Kryo kryo, Input input) {
-        data = kryo.readObject(input, Operation.class);
+        data = (Operation) kryo.readClassAndObject(input);
         sender = kryo.readObject(input, Member.class);
     }
 }

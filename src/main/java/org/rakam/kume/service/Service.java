@@ -1,8 +1,9 @@
 package org.rakam.kume.service;
 
-import org.rakam.kume.util.NioEventLoopGroupArray;
+import io.netty.util.concurrent.EventExecutor;
 import org.rakam.kume.transport.OperationContext;
 import org.rakam.kume.transport.Request;
+import org.rakam.kume.util.NioEventLoopGroupArray;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -16,16 +17,35 @@ public abstract class Service {
         LOGGER.warn("Discarded message {} because the service doesn't implement handle(OperationContext, Object)", object);
     }
 
-    public void handle(OperationContext ctx, Request request) {
-        request.run(this, ctx);
-    }
-
     public void handle(NioEventLoopGroupArray executor, OperationContext ctx, Object object) {
-        executor.getChild(ctx.serviceId() % executor.executorCount()).execute(() -> handle(ctx, object));
+        int id = ctx.serviceId() % executor.executorCount();
+        EventExecutor child = executor.getChild(id);
+        if(child.inEventLoop()) {
+            try {
+                handle(ctx, object);
+            } catch (Exception e) {
+                LOGGER.error("error while running throwable code block", e);
+                // TODO: should we reply or wait for timeout?
+            }
+        } else {
+            child.execute(() -> handle(ctx, object));
+        }
     }
 
     public void handle(NioEventLoopGroupArray executor, OperationContext ctx, Request request) {
-        executor.getChild(ctx.serviceId() % executor.executorCount()).execute(() -> request.run(this, ctx));
+        int id = ctx.serviceId() % executor.executorCount();
+        EventExecutor child = executor.getChild(id);
+        if(child.inEventLoop()) {
+            // no need to create new runnable, just execute the request since we're already in event thread.
+            try {
+                request.run(this, ctx);
+            } catch (Exception e) {
+                LOGGER.error("error while running throwable code block", e);
+                // TODO: should we reply or wait for timeout?
+            }
+        } else {
+            child.execute(() -> request.run(this, ctx));
+        }
     }
 
     public abstract void onClose();

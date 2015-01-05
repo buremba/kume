@@ -1,5 +1,6 @@
 package org.rakam.kume;
 
+import org.rakam.kume.service.Service;
 import org.rakam.kume.transport.OperationContext;
 import org.rakam.kume.transport.Request;
 
@@ -16,10 +17,10 @@ import java.util.function.Function;
 */
 class AppendLogEntryRequest<R> implements Request<Cluster.InternalService, Boolean> {
     private final Request request;
-    private final Function<Cluster, Boolean> preCheck;
+    private final Function<Service, Boolean> preCheck;
     private final int serviceId;
 
-    public AppendLogEntryRequest(Request request, Function<Cluster, Boolean> preCheck, int serviceId) {
+    public AppendLogEntryRequest(Request request, Function<Service, Boolean> preCheck, int serviceId) {
         this.request = request;
         this.serviceId = serviceId;
         this.preCheck = preCheck;
@@ -27,12 +28,12 @@ class AppendLogEntryRequest<R> implements Request<Cluster.InternalService, Boole
 
     @Override
     public void run(Cluster.InternalService service, OperationContext<Boolean> ctx) {
-        synchronized (service.cluster) {
+//        synchronized (service.cluster) {
             Set<Member> counter = new HashSet<>();
             Set<Member> members = service.cluster.getMembers();
             AtomicInteger size = new AtomicInteger(members.size());
             long index = service.cluster.getLastCommitIndex().get();
-            if(preCheck==null || preCheck.apply(service.cluster))
+            if(preCheck!=null && !preCheck.apply(service))
                 ctx.reply(false);
 
             ArrayList<CompletableFuture> reqs = new ArrayList(members.size());
@@ -41,7 +42,7 @@ class AppendLogEntryRequest<R> implements Request<Cluster.InternalService, Boole
                 service.cluster.tryAskUntilDoneInternal(member, new UncommittedLogRequest(index, request), 5, serviceId, f);
                 reqs.add(f.whenComplete((result, ex) -> {
                     int lastSize;
-                    if (ex != null && ex instanceof TimeoutException) {
+                    if (ex != null) {
                         service.cluster.removeMemberAsMaster(member, true);
                         lastSize = size.decrementAndGet();
                     } else {
@@ -50,13 +51,13 @@ class AppendLogEntryRequest<R> implements Request<Cluster.InternalService, Boole
                     }
 
                     if (lastSize == members.size()) {
-                        ctx.reply(true);
                         commit(service.cluster, index);
+                        ctx.reply(true);
                     }
                 }));
             }
             reqs.forEach(f -> f.join());
-        }
+//        }
     }
 
     public void commit(Cluster cluster, long index) {
@@ -73,9 +74,9 @@ class AppendLogEntryRequest<R> implements Request<Cluster.InternalService, Boole
 
     public static class UncommittedLogRequest implements Request<Cluster.InternalService, Boolean> {
         long index;
-        Object request;
+        Request request;
 
-        public UncommittedLogRequest(long index, Object request) {
+        public UncommittedLogRequest(long index, Request request) {
             this.index = index;
             this.request = request;
         }
@@ -83,6 +84,7 @@ class AppendLogEntryRequest<R> implements Request<Cluster.InternalService, Boole
         @Override
         public void run(Cluster.InternalService service, OperationContext<Boolean> ctx) {
             service.cluster.pendingConsensusMessages().put(index, request);
+            ctx.reply(true);
         }
     }
     public static class CommitLogRequest implements Request<Cluster.InternalService, Boolean> {
@@ -94,7 +96,7 @@ class AppendLogEntryRequest<R> implements Request<Cluster.InternalService, Boole
 
         @Override
         public void run(Cluster.InternalService service, OperationContext<Boolean> ctx) {
-            service.cluster.pendingConsensusMessages().get(index);
+            service.cluster.pendingConsensusMessages().get(index).run(service, ctx);
         }
     }
 }

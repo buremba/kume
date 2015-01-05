@@ -4,10 +4,11 @@ import org.rakam.kume.Cluster;
 import org.rakam.kume.Member;
 import org.rakam.kume.MembershipListener;
 import org.rakam.kume.MigrationListener;
+import org.rakam.kume.service.PausableService;
 import org.rakam.kume.transport.OperationContext;
 import org.rakam.kume.transport.Request;
-import org.rakam.kume.service.PausableService;
 import org.rakam.kume.util.ConsistentHashRing;
+import org.rakam.kume.util.FutureUtil.MultipleFutureListener;
 import org.rakam.kume.util.Throwables;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -39,12 +40,12 @@ public abstract class AbstractRingMap<C extends AbstractRingMap, M extends Map, 
     private final Supplier<M> mapSupplier;
 
     protected M[] map;
-    int[] bucketIds;
+    protected int[] bucketIds;
     private ConsistentHashRing ring;
     private static Random random = new Random();
     int bucketPerNode = 8;
 
-    private final Member localMember;
+    protected final Member localMember;
     private LinkedList<MigrationListener> migrationListeners = new LinkedList<>();
     Map<ConsistentHashRing.TokenRange, Map<K, V>> dataWaitingForMigration = new HashMap<>();
 
@@ -84,9 +85,9 @@ public abstract class AbstractRingMap<C extends AbstractRingMap, M extends Map, 
 
         Class clazz;
         M sample = null;
-        if(map != null) {
+        if (map != null) {
             clazz = map[0].getClass();
-        }else {
+        } else {
             sample = mapSupplier.get();
             clazz = sample.getClass();
         }
@@ -95,7 +96,7 @@ public abstract class AbstractRingMap<C extends AbstractRingMap, M extends Map, 
         M[] arr = (M[]) Array.newInstance(clazz, count);
 
         int i = 0;
-        if(sample!=null)  {
+        if (sample != null) {
             i = 1;
             arr[0] = sample;
         }
@@ -300,8 +301,14 @@ public abstract class AbstractRingMap<C extends AbstractRingMap, M extends Map, 
     }
 
     protected Map<K, V> getPartition(int bucketId) {
+        return map[getPartitionId(bucketId)];
+    }
+
+    protected int getPartitionId(int bucketId) {
         int i = Arrays.binarySearch(bucketIds, bucketId);
-        return i >= 0 ? map[i] : null;
+        if (i < 0)
+            throw new IllegalArgumentException("bucket is not owned by this member");
+        return i;
     }
 
     @Override
@@ -343,21 +350,17 @@ public abstract class AbstractRingMap<C extends AbstractRingMap, M extends Map, 
         int bucketId = ring.findBucketIdFromToken(hash(key));
         ConsistentHashRing.Bucket bucket = ring.getBucket(bucketId);
 
-        CompletableFuture<Void>[] stages = new CompletableFuture[bucket.members.size()];
-        int idx = 0;
+        MultipleFutureListener listener = new MultipleFutureListener((bucket.members.size() / 2) + 1);
         for (Member next : bucket.members) {
             if (next.equals(localMember)) {
                 putLocal(key, val);
-                stages[idx++] = CompletableFuture.completedFuture(null);
+                listener.increment();
             } else {
-                stages[idx++] = getContext().ask(next, new PutMapOperation(key, val));
-                ;
+                listener.listen(getContext().ask(next, new PutMapOperation(key, val)));
             }
         }
 
-        // we should use eventual consistency here,
-        // that said it should wait quorum of servers to complete this Future.
-        return CompletableFuture.allOf(stages);
+        return listener.get();
     }
 
     public CompletableFuture<V> get(String key) {
@@ -431,7 +434,7 @@ public abstract class AbstractRingMap<C extends AbstractRingMap, M extends Map, 
         migrationListeners.add(migrationListener);
     }
 
-    public static class PutMapOperation implements Request<RingMap, Void> {
+    public static class PutMapOperation implements Request<AbstractRingMap, Void> {
         Object key;
         Object value;
 
@@ -441,7 +444,7 @@ public abstract class AbstractRingMap<C extends AbstractRingMap, M extends Map, 
         }
 
         @Override
-        public void run(RingMap service, OperationContext ctx) {
+        public void run(AbstractRingMap service, OperationContext ctx) {
             service.putLocal(key, value);
         }
     }
@@ -454,5 +457,4 @@ public abstract class AbstractRingMap<C extends AbstractRingMap, M extends Map, 
             partition.put(key, value);
         }
     }
-
 }

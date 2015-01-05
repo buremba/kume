@@ -76,12 +76,13 @@ public class Cluster {
     // Processor thread pool that deserialize/serialize incoming packets
     final EventLoopGroup workerGroup = new NioEventLoopGroup();
     // Thread pool for handling requests and messages
-    protected final NioEventLoopGroupArray eventExecutors = new NioEventLoopGroupArray();
+    protected final NioEventLoopGroupArray eventExecutors = new NioEventLoopGroupArray("event-executor", (t1, e) ->
+            LOGGER.error("error while executing operation", e));
+
     // Event loop for running cluster migrations
     final EventExecutor eventLoop = new NioEventLoopGroup(1).next();
 
     final private List<Service> services;
-
     final private AtomicInteger messageSequence = new AtomicInteger();
     final protected ServiceContext<InternalService> internalBus;
 
@@ -108,7 +109,7 @@ public class Cluster {
     private ScheduledFuture<?> heartbeatTask;
     private ConcurrentMap<InetSocketAddress, Integer> pendingUserVotes = CacheBuilder.newBuilder().expireAfterWrite(100, TimeUnit.SECONDS).<InetSocketAddress, Integer>build().asMap();
     private MemberState memberState;
-    private Map<Long, Object> pendingConsensusMessages = new ConcurrentHashMap<>();
+    private Map<Long, Request> pendingConsensusMessages = new ConcurrentHashMap<>();
     private AtomicLong lastCommitIndex = new AtomicLong();
 
     public Cluster(Collection<Member> members, ServiceInitializer serviceGenerators, InetSocketAddress serverAddress, boolean mustJoinCluster) {
@@ -411,13 +412,16 @@ public class Cluster {
             ctx.reply(true);
         };
 
-        Boolean result = internalBus.replicateSafely(cluster -> cluster.serviceNameMap.containsKey(finalName),
+        Boolean result = internalBus.replicateSafely(service -> !service.cluster.serviceNameMap.containsKey(finalName),
                 createServiceRequest).join();
 
         if (!result)
             throw new IllegalArgumentException("there is already another service with same name");
 
-        return (T) serviceNameMap.get(finalName);
+        Service service = serviceNameMap.get(finalName);
+        if(service==null)
+            throw new IllegalStateException("service couldn't created");
+        return (T) service;
     }
 
     /**
@@ -431,12 +435,12 @@ public class Cluster {
      *
      * @param request
      */
-    private CompletableFuture<Boolean> replicateSafelyInternal(Function<Cluster, Boolean> preCheck, Request request, int serviceId) {
+    private CompletableFuture<Boolean> replicateSafelyInternal(Function<?, Boolean> preCheck, Request<?, Boolean> request, int serviceId) {
         AppendLogEntryRequest requestFromMaster = new AppendLogEntryRequest(request, preCheck, serviceId);
         return askInternal(getMaster(), requestFromMaster, serviceId);
     }
 
-    protected Map<Long, Object> pendingConsensusMessages() {
+    protected Map<Long, Request> pendingConsensusMessages() {
         return pendingConsensusMessages;
     }
 
@@ -534,7 +538,7 @@ public class Cluster {
         }
     }
 
-    public <R> void tryAskUntilDoneInternal(Member member, Object req, int numberOfTimes, int service, CompletableFuture future) {
+    public <R> void tryAskUntilDoneInternal(Member member, Request req, int numberOfTimes, int service, CompletableFuture future) {
         CompletableFuture<R> ask = askInternal(member, req, service);
         ask.whenComplete((val, ex) -> {
             if (ex != null)
@@ -747,11 +751,11 @@ public class Cluster {
             return f;
         }
 
-        public CompletableFuture<Boolean> replicateSafely(Request<T, ?> req) {
+        public CompletableFuture<Boolean> replicateSafely(Request<T, Boolean> req) {
             return replicateSafelyInternal(null, req, service);
         }
 
-        public CompletableFuture<Boolean> replicateSafely(Function<Cluster, Boolean> preCheck, Request<T, ?> req) {
+        public CompletableFuture<Boolean> replicateSafely(Function<T, Boolean> preCheck, Request<T, Boolean> req) {
             return replicateSafelyInternal(preCheck, req, service);
         }
 

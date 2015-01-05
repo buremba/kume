@@ -9,11 +9,17 @@ import java.util.stream.Stream;
 public class FutureUtil {
     public static class MultipleFutureListener {
         final int expected;
-        Runnable run;
-        int current = 0;
+        CompletableFuture<Void> f;
+        private int current = 0;
 
         public MultipleFutureListener(int expected) {
             this.expected = expected;
+            f = new CompletableFuture<>();
+        }
+
+        public MultipleFutureListener(int expected, CompletableFuture<Void> f) {
+            this.expected = expected;
+            this.f = f;
         }
 
         public static MultipleFutureListener from(Stream<CompletableFuture> stream) {
@@ -25,20 +31,21 @@ public class FutureUtil {
             return l;
         }
 
-        public void thenRun(Runnable run) {
-            if (this.run != run)
-                throw new IllegalAccessError("already registered callback");
+        public CompletableFuture<Void> get() {
+            return f;
+        }
 
-            this.run = run;
+        public void increment() {
+            current++;
             runIfDone();
         }
 
         private void runIfDone() {
-            if (current >= expected && run!=null)
-                run.run();
+            if (current >= expected)
+                f.complete(null);
         }
 
-        public void add(CompletableFuture f) {
+        public void listen(CompletableFuture f) {
             f.thenRun(() -> {
                 current++;
                 runIfDone();
