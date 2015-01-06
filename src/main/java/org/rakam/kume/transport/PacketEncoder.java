@@ -15,9 +15,11 @@ import org.slf4j.LoggerFactory;
 public class PacketEncoder extends MessageToByteEncoder<Packet> {
     private final Kryo kryo;
     final static Logger LOGGER = LoggerFactory.getLogger(PacketEncoder.class);
+    private final Output output;
 
     public PacketEncoder() {
         this.kryo = KryoFactory.getKryoInstance();
+        output = new Output(2<<12, 2<<20);
     }
 
     @Override
@@ -26,7 +28,7 @@ public class PacketEncoder extends MessageToByteEncoder<Packet> {
         try {
             LOGGER.trace("Encoding Packet{sequence={}, service={}}", msg.sequence, msg.service);
 
-            Output output = new Output(2<<8, 2<<20);
+            output.clear();
             kryo.writeClassAndObject(output, msg.data);
 
             out.writeInt(msg.sequence);
