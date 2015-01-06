@@ -9,7 +9,6 @@ import org.rakam.kume.transport.OperationContext;
 import org.rakam.kume.transport.Request;
 import org.rakam.kume.util.ConsistentHashRing;
 import org.rakam.kume.util.FutureUtil.MultipleFutureListener;
-import org.rakam.kume.util.Throwables;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -187,7 +186,7 @@ public abstract class AbstractRingMap<C extends AbstractRingMap, M extends Map, 
         }
 
         if (migrations.size() > 0) {
-            migrationListeners.forEach(l -> Throwables.propagate(() -> l.migrationStart(localMember)));
+            migrationListeners.forEach(l -> getContext().eventLoop().execute(() -> l.migrationStart(localMember)));
         }
 
         // resume when all migrations completed
@@ -200,7 +199,7 @@ public abstract class AbstractRingMap<C extends AbstractRingMap, M extends Map, 
                         map = newMap;
                         ring = newRing;
                     }
-                    migrationListeners.forEach(l -> Throwables.propagate(() -> l.migrationEnd(localMember)));
+                    migrationListeners.forEach(l -> getContext().eventLoop().execute(() -> l.migrationEnd(localMember)));
                     logOwnedBuckets();
                 });
     }
@@ -282,7 +281,7 @@ public abstract class AbstractRingMap<C extends AbstractRingMap, M extends Map, 
         }
 
         if (migrations.size() > 0) {
-            migrationListeners.forEach(l -> Throwables.propagate(() -> l.migrationStart(localMember)));
+            migrationListeners.forEach(l -> getContext().eventLoop().execute(() -> l.migrationStart(localMember)));
         }
 
         // resume when all migrations completed
@@ -295,7 +294,7 @@ public abstract class AbstractRingMap<C extends AbstractRingMap, M extends Map, 
                         map = newMap;
                         ring = newRing;
                     }
-                    migrationListeners.forEach(l -> Throwables.propagate(() -> l.migrationEnd(localMember)));
+                    migrationListeners.forEach(l -> getContext().eventLoop().execute(() -> l.migrationEnd(localMember)));
                     logOwnedBuckets();
                 });
     }

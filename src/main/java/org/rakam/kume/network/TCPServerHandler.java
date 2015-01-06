@@ -15,7 +15,8 @@ import io.netty.handler.codec.LengthFieldPrepender;
 import org.rakam.kume.Cluster;
 import org.rakam.kume.transport.PacketDecoder;
 import org.rakam.kume.transport.PacketEncoder;
-import org.rakam.kume.util.NioEventLoopGroupArray;
+import org.rakam.kume.util.ThrowableNioEventLoopGroup;
+import org.rakam.kume.util.ThrowableNioEventLoopGroup;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -29,7 +30,7 @@ public class TCPServerHandler {
     final static Logger LOGGER = LoggerFactory.getLogger(TCPServerHandler.class);
     private final Channel server;
 
-    public TCPServerHandler(EventLoopGroup bossGroup, EventLoopGroup workerGroup, NioEventLoopGroupArray eventExecutor, Cluster cluster, InetSocketAddress serverAddress) throws InterruptedException {
+    public TCPServerHandler(EventLoopGroup bossGroup, EventLoopGroup workerGroup, ThrowableNioEventLoopGroup eventExecutor, Cluster cluster, InetSocketAddress serverAddress) throws InterruptedException {
         ChannelFuture bind = new ServerBootstrap()
                 .childOption(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
                 .group(bossGroup, workerGroup)

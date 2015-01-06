@@ -10,16 +10,16 @@ import java.util.concurrent.atomic.AtomicInteger;
 /**
  * Created by buremba <Burak Emre Kabakcı> on 30/12/14 05:59.
  */
-public class NioEventLoopGroupArray extends NioEventLoopGroup {
+public class ThrowableNioEventLoopGroup extends NioEventLoopGroup {
     EventExecutor[] children;
 
 
-    public NioEventLoopGroupArray(int nThreads, String name, UncaughtExceptionHandler exceptionHandler) {
+    public ThrowableNioEventLoopGroup(int nThreads, String name, UncaughtExceptionHandler exceptionHandler) {
         super(nThreads, new ExceptionCatchingThreadFactory(name, exceptionHandler));
         children = super.children().stream().toArray(EventExecutor[]::new);
     }
 
-    public NioEventLoopGroupArray(String name, UncaughtExceptionHandler exceptionHandler) {
+    public ThrowableNioEventLoopGroup(String name, UncaughtExceptionHandler exceptionHandler) {
         this(Runtime.getRuntime().availableProcessors()*2, name, exceptionHandler);
     }
 

@@ -3,7 +3,8 @@ package org.rakam.kume.service;
 import io.netty.util.concurrent.EventExecutor;
 import org.rakam.kume.transport.OperationContext;
 import org.rakam.kume.transport.Request;
-import org.rakam.kume.util.NioEventLoopGroupArray;
+import org.rakam.kume.util.ThrowableNioEventLoopGroup;
+import org.rakam.kume.util.ThrowableNioEventLoopGroup;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -17,7 +18,7 @@ public abstract class Service {
         LOGGER.warn("Discarded message {} because the service doesn't implement handle(OperationContext, Object)", object);
     }
 
-    public void handle(NioEventLoopGroupArray executor, OperationContext ctx, Object object) {
+    public void handle(ThrowableNioEventLoopGroup executor, OperationContext ctx, Object object) {
         int id = ctx.serviceId() % executor.executorCount();
         EventExecutor child = executor.getChild(id);
         if(child.inEventLoop()) {
@@ -32,7 +33,7 @@ public abstract class Service {
         }
     }
 
-    public void handle(NioEventLoopGroupArray executor, OperationContext ctx, Request request) {
+    public void handle(ThrowableNioEventLoopGroup executor, OperationContext ctx, Request request) {
         int id = ctx.serviceId() % executor.executorCount();
         EventExecutor child = executor.getChild(id);
         if(child.inEventLoop()) {

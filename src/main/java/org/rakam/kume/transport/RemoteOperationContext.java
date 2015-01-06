@@ -29,7 +29,7 @@ public class RemoteOperationContext implements OperationContext {
         // i don't want to include sender identity to each message
         // so we need a clever way to find the sender.
         // TODO: maybe we can keep a reverse map to resolve sender?
-
+//        System.out.println(ctx.channel().remoteAddress());
 //        Optional<Member> first = cluster.getMembers().stream()
 //                .filter(x -> x.getAddress().equals(ctx.channel().remoteAddress()))
 //                .findFirst();

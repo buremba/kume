@@ -17,7 +17,6 @@ import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
 import io.netty.handler.codec.LengthFieldBasedFrameDecoder;
 import io.netty.handler.codec.LengthFieldPrepender;
-import io.netty.util.concurrent.EventExecutor;
 import org.rakam.kume.network.ClientChannelAdapter;
 import org.rakam.kume.network.MulticastServerHandler;
 import org.rakam.kume.network.TCPServerHandler;
@@ -31,8 +30,7 @@ import org.rakam.kume.transport.Packet;
 import org.rakam.kume.transport.PacketDecoder;
 import org.rakam.kume.transport.PacketEncoder;
 import org.rakam.kume.transport.Request;
-import org.rakam.kume.util.NioEventLoopGroupArray;
-import org.rakam.kume.util.Throwables;
+import org.rakam.kume.util.ThrowableNioEventLoopGroup;
 import org.rakam.kume.util.Tuple;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -73,14 +71,16 @@ public class Cluster {
 
     // IO thread for TCP and UDP connections
     final EventLoopGroup bossGroup = new NioEventLoopGroup(1);
-    // Processor thread pool that deserialize/serialize incoming packets
-    final EventLoopGroup workerGroup = new NioEventLoopGroup();
+    // Processor thread pool that deserialize/serialize incoming/outgoing packets
+    final EventLoopGroup workerGroup = new ThrowableNioEventLoopGroup("request-executor", (t1, e) ->
+            LOGGER.error("error while handling package", e));
     // Thread pool for handling requests and messages
-    protected final NioEventLoopGroupArray eventExecutors = new NioEventLoopGroupArray("event-executor", (t1, e) ->
-            LOGGER.error("error while executing operation", e));
+    final ThrowableNioEventLoopGroup requestExecutor = new ThrowableNioEventLoopGroup("request-executor", (t1, e) ->
+            LOGGER.error("error while executing request", e));
 
     // Event loop for running cluster migrations
-    final EventExecutor eventLoop = new NioEventLoopGroup(1).next();
+    final ThrowableNioEventLoopGroup eventLoop = new ThrowableNioEventLoopGroup("event-executor", (t1, e) ->
+            LOGGER.error("error while executing operation", e));
 
     final private List<Service> services;
     final private AtomicInteger messageSequence = new AtomicInteger();
@@ -117,7 +117,7 @@ public class Cluster {
         this.members = new HashSet<>(members);
 
         try {
-            server = new TCPServerHandler(bossGroup, workerGroup, eventExecutors, this, serverAddress);
+            server = new TCPServerHandler(bossGroup, workerGroup, requestExecutor, this, serverAddress);
         } catch (InterruptedException e) {
             throw new IllegalStateException("Failed to bind TCP " + serverAddress);
         }
@@ -192,7 +192,7 @@ public class Cluster {
 
     }
 
-    public synchronized void addMemberInternal(Member member) {
+    public void addMemberInternal(Member member) {
         if (!members.contains(member) && !member.equals(localMember)) {
             LOGGER.info("Discovered new member {}", member);
 
@@ -211,7 +211,7 @@ public class Cluster {
             members.add(member);
             if (isMaster())
                 heartbeatMap.put(member, System.currentTimeMillis());
-            membershipListeners.forEach(x -> eventLoop.execute(Throwables.propagate(() -> x.memberAdded(member))));
+            membershipListeners.forEach(x -> eventLoop.execute(() -> x.memberAdded(member)));
         }
     }
 
@@ -220,6 +220,8 @@ public class Cluster {
             LOGGER.info("Discovered another cluster of {} members", members.size());
 
             for (Member member : newMembers) {
+                if(member.equals(localMember))
+                    continue;
                 // we may create the connection before executing this method.
                 if (!clusterConnection.containsKey(member)) {
                     Channel channel;
@@ -236,7 +238,7 @@ public class Cluster {
                 if (isMaster())
                     heartbeatMap.put(member, System.currentTimeMillis());
             }
-            membershipListeners.forEach(x -> eventLoop.execute(Throwables.propagate(() -> x.clusterMerged(newMembers))));
+            membershipListeners.forEach(x -> eventLoop.execute(() -> x.clusterMerged(newMembers)));
         }
     }
 
@@ -254,7 +256,7 @@ public class Cluster {
                         removeMemberAsMaster(member, true);
                     }
                 });
-                members.forEach(member -> internalBus.send(member, new HeartbeatRequest()));
+                members.forEach(member -> internalBus.send(member, new HeartbeatRequest(localMember)));
 //                multicastServer.sendMulticast(new HeartbeatRequest());
             } else {
                 if (time - lastContactedTimeMaster > 500) {
@@ -274,7 +276,7 @@ public class Cluster {
         }, 200, 200, TimeUnit.MILLISECONDS);
 
         workerGroup.scheduleWithFixedDelay(() -> {
-            ClusterCheckAndMergeOperation req = new ClusterCheckAndMergeOperation(getMembers().size(), System.currentTimeMillis() - clusterStartTime);
+            ClusterCheckAndMergeOperation req = new ClusterCheckAndMergeOperation();
             multicastServer.sendMulticast(req);
         }, 0, 2000, TimeUnit.MILLISECONDS);
     }
@@ -479,7 +481,7 @@ public class Cluster {
         if (includeThisMember) {
             Service s = services.get(service);
             LocalOperationContext ctx = new LocalOperationContext(null, service, localMember);
-            s.handle(eventExecutors, ctx, bytes);
+            s.handle(requestExecutor, ctx, bytes);
         }
     }
 
@@ -495,7 +497,7 @@ public class Cluster {
             CompletableFuture<R> f = new CompletableFuture<>();
             Service s = services.get(service);
             LocalOperationContext ctx = new LocalOperationContext(f, service, localMember);
-            s.handle(eventExecutors, ctx, bytes);
+            s.handle(requestExecutor, ctx, bytes);
             map.put(localMember, f);
         }
 
@@ -521,7 +523,7 @@ public class Cluster {
     public void sendInternal(Member member, Object obj, int service) {
         if (server.equals(localMember)) {
             LocalOperationContext ctx1 = new LocalOperationContext(null, service, localMember);
-            services.get(service).handle(eventExecutors, ctx1, obj);
+            services.get(service).handle(requestExecutor, ctx1, obj);
         } else {
             Packet message = new Packet(obj, service);
             getConnection(member).writeAndFlush(message);
@@ -531,7 +533,7 @@ public class Cluster {
     public void sendInternal(Member member, Request request, int service) {
         if (server.equals(localMember)) {
             LocalOperationContext ctx1 = new LocalOperationContext(null, service, localMember);
-            services.get(service).handle(eventExecutors, ctx1, request);
+            services.get(service).handle(requestExecutor, ctx1, request);
         } else {
             Packet message = new Packet(request, service);
             getConnection(member).writeAndFlush(message);
@@ -571,7 +573,7 @@ public class Cluster {
         if (member.equals(localMember)) {
             CompletableFuture<R> future = new CompletableFuture<>();
             LocalOperationContext ctx1 = new LocalOperationContext(future, service, localMember);
-            services.get(service).handle(eventExecutors, ctx1, obj);
+            services.get(service).handle(requestExecutor, ctx1, obj);
             return future;
         } else {
             return askInternal(getConnection(member), obj, service);
@@ -582,7 +584,7 @@ public class Cluster {
         if (member.equals(localMember)) {
             CompletableFuture<R> future = new CompletableFuture<>();
             LocalOperationContext ctx1 = new LocalOperationContext(future, service, localMember);
-            services.get(service).handle(eventExecutors, ctx1, request);
+            services.get(service).handle(requestExecutor, ctx1, request);
             return future;
         } else {
             return askInternal(getConnection(member), request, service);
@@ -623,6 +625,11 @@ public class Cluster {
     }
 
     public static class HeartbeatRequest implements Operation<InternalService> {
+        Member sender;
+
+        public HeartbeatRequest(Member sender) {
+            this.sender = sender;
+        }
 
         @Override
         public void run(InternalService service, OperationContext ctx) {
@@ -634,8 +641,10 @@ public class Cluster {
             if (sender.equals(masterMember)) {
                 service.cluster.lastContactedTimeMaster = System.currentTimeMillis();
             } else {
+                LOGGER.trace("got message from a member who thinks he is the master: {0}", sender);
                 if (!service.cluster.getMembers().contains(sender)) {
-                    service.cluster.changeMaster(ctx.getSender());
+                    LOGGER.trace("it seems this is new master added me in his cluster and" +
+                            " it will most probably send changeCluster request to me");
                 }
             }
         }
@@ -762,6 +771,10 @@ public class Cluster {
         public <R> CompletableFuture<R> tryAskUntilDone(Member member, Request<T, R> req, int numberOfTimes, Class<R> clazz) {
             return tryAskUntilDone(member, req, numberOfTimes);
         }
+
+        public NioEventLoopGroup eventLoop() {
+            return eventLoop;
+        }
     }
 
     public static class JoinOperation implements Operation<InternalService> {
@@ -808,7 +821,7 @@ public class Cluster {
             LOGGER.info("Joined a cluster of {} nodes.", members.size());
             multicastServer.setJoinGroup(masterMember.equals(localMember));
             if (!isNew)
-                membershipListeners.forEach(x -> eventLoop.execute(Throwables.propagate(() -> x.clusterChanged())));
+                membershipListeners.forEach(x -> eventLoop.execute(() -> x.clusterChanged()));
         } finally {
             resume();
         }

@@ -7,7 +7,8 @@ import org.rakam.kume.transport.OperationContext;
 import org.rakam.kume.transport.Request;
 import org.rakam.kume.util.ConsistentHashRing;
 import org.rakam.kume.util.FutureUtil;
-import org.rakam.kume.util.NioEventLoopGroupArray;
+import org.rakam.kume.util.ThrowableNioEventLoopGroup;
+import org.rakam.kume.util.ThrowableNioEventLoopGroup;
 
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -63,7 +64,7 @@ public class RingMap<K, V> extends AbstractRingMap<RingMap, Map, K, V> {
      * @param request
      */
     @Override
-    public void handle(NioEventLoopGroupArray executor, OperationContext ctx, Request request) {
+    public void handle(ThrowableNioEventLoopGroup executor, OperationContext ctx, Request request) {
         if (request instanceof PartitionRestrictedMapRequest) {
             int id = ((PartitionRestrictedMapRequest) request).getPartition(this) % executor.executorCount();
             EventExecutor child = executor.getChild(id);

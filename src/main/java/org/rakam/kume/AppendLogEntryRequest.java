@@ -57,6 +57,7 @@ class AppendLogEntryRequest<R> implements Request<Cluster.InternalService, Boole
                 }));
             }
             reqs.forEach(f -> f.join());
+
 //        }
     }
 

@@ -1,10 +1,14 @@
 package org.rakam.kume;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
 import org.junit.Test;
 import org.rakam.kume.service.Service;
 import org.rakam.kume.service.ServiceInitializer;
 import org.rakam.kume.transport.OperationContext;
+import org.slf4j.LoggerFactory;
 
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 
 /**
@@ -31,6 +35,17 @@ public class ClusterTest extends KumeTest {
         latch.await();
     }
 
+    @Test
+    public void testListeners() throws InterruptedException {
+        Logger root = (Logger) LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME);
+        root.setLevel(Level.DEBUG);
+
+        ServiceInitializer constructors = new ServiceInitializer()
+              .add("test", (bus) -> new SimpleService(bus));
+
+        new ClusterBuilder().services(constructors).start();
+    }
+
     private static class MyService extends Service {
 
         private final CountDownLatch latch;
@@ -49,6 +64,37 @@ public class ClusterTest extends KumeTest {
         public void handle(OperationContext ctx, Object request) {
             if(request.equals(1))
                 latch.countDown();
+        }
+
+        @Override
+        public void onClose() {
+
+        }
+    }
+
+    private class SimpleService extends Service implements MembershipListener {
+        private SimpleService(Cluster.ServiceContext cluster) {
+            cluster.getCluster().addMembershipListener(this);
+        }
+
+        @Override
+        public void memberAdded(Member member) {
+            System.out.println("memberAdded");
+        }
+
+        @Override
+        public void memberRemoved(Member member) {
+            System.out.println("memberRemoved");
+        }
+
+        @Override
+        public void clusterMerged(Set<Member> newMembers) {
+            System.out.println("clusterMerged");
+        }
+
+        @Override
+        public void clusterChanged() {
+            System.out.println("clusterChanged");
         }
 
         @Override
