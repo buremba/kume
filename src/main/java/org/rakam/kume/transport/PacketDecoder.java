@@ -2,10 +2,10 @@ package org.rakam.kume.transport;
 
 import com.esotericsoftware.kryo.Kryo;
 import com.esotericsoftware.kryo.KryoException;
-import com.esotericsoftware.kryo.io.Input;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.ByteToMessageDecoder;
+import org.rakam.kume.ByteBufInput;
 import org.rakam.kume.transport.serialization.KryoFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -30,11 +30,9 @@ public class PacketDecoder extends ByteToMessageDecoder {
             int serviceId = buffer.readUnsignedShort();
             LOGGER.trace("Decoding Packet{sequence={}, service={}}", packetNum, serviceId);
 
-            byte[] data = new byte[buffer.readableBytes()];
-            buffer.readBytes(data);
             Object o;
             try {
-                o = kryo.readClassAndObject(new Input(data));
+                o = kryo.readClassAndObject(new ByteBufInput(buffer));
             } catch (KryoException e) {
                 LOGGER.warn("Couldn't deserialize object", e);
                 return;

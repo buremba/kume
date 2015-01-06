@@ -44,7 +44,7 @@ public class ByteBufOutput extends Output {
 
     @Override
     public byte[] getBuffer() {
-        throw new NotImplementedException();
+        return byteBuf.array();
     }
 
     @Override
@@ -57,6 +57,14 @@ public class ByteBufOutput extends Output {
         // netty has different positions for read and write operations.
         // so this method is not compatible.
         throw new NotImplementedException();
+    }
+
+    public void setWriterPosition(int pos) {
+        byteBuf.writerIndex(pos);
+    }
+
+    public void setReaderPosition(int pos) {
+        byteBuf.readerIndex(pos);
     }
 
     @Override
