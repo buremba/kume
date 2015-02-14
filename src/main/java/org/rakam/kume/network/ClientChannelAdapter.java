@@ -33,4 +33,9 @@ public class ClientChannelAdapter extends ChannelInboundHandlerAdapter {
             LOGGER.warn("unhandled packet {}", msg);
         }
     }
+
+    @Override
+    public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
+        super.exceptionCaught(ctx, cause);
+    }
 }

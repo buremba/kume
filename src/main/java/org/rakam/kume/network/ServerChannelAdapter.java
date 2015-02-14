@@ -36,7 +36,6 @@ public class ServerChannelAdapter extends ChannelInboundHandlerAdapter {
 
         Packet read = (Packet) msg;
         Object o = read.getData();
-//        System.out.println(ctx.channel().remoteAddress());
 
         RemoteOperationContext ctx1 = new RemoteOperationContext(ctx, read.service, read.sequence, eventBus);
         Service service = services.get(read.service);
@@ -45,5 +44,10 @@ public class ServerChannelAdapter extends ChannelInboundHandlerAdapter {
         } else {
             service.handle(eventExecutors, ctx1, o);
         }
+    }
+
+    @Override
+    public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
+        super.exceptionCaught(ctx, cause);
     }
 }

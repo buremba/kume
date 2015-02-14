@@ -54,7 +54,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -71,14 +70,13 @@ public class Cluster {
 
     // IO thread for TCP and UDP connections
     final EventLoopGroup bossGroup = new NioEventLoopGroup(1);
-    // Processor thread pool that deserialize/serialize incoming/outgoing packets
-    final EventLoopGroup workerGroup = new ThrowableNioEventLoopGroup("request-executor", (t1, e) ->
-            LOGGER.error("error while handling package", e));
+    // Processor thread pool that de-serializing/serializing incoming/outgoing packets
+    final EventLoopGroup workerGroup = new NioEventLoopGroup(4);
     // Thread pool for handling requests and messages
     final ThrowableNioEventLoopGroup requestExecutor = new ThrowableNioEventLoopGroup("request-executor", (t1, e) ->
             LOGGER.error("error while executing request", e));
 
-    // Event loop for running cluster migrations
+    // Event loop for running cluster events.
     final ThrowableNioEventLoopGroup eventLoop = new ThrowableNioEventLoopGroup("event-executor", (t1, e) ->
             LOGGER.error("error while executing operation", e));
 
@@ -112,7 +110,7 @@ public class Cluster {
     private Map<Long, Request> pendingConsensusMessages = new ConcurrentHashMap<>();
     private AtomicLong lastCommitIndex = new AtomicLong();
 
-    public Cluster(Collection<Member> members, ServiceInitializer serviceGenerators, InetSocketAddress serverAddress, boolean mustJoinCluster) {
+    public Cluster(Collection<Member> members, ServiceInitializer serviceGenerators, InetSocketAddress serverAddress, boolean mustJoinCluster, boolean client) {
         clusterStartTime = System.currentTimeMillis();
         this.members = new HashSet<>(members);
 
@@ -124,15 +122,23 @@ public class Cluster {
 
         Runtime.getRuntime().addShutdownHook(new Thread() {
             public void run() {
-                try {
-                    server.waitForClose();
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                }
+//                try {
+//                    server.waitForClose();
+//                } catch (InterruptedException e) {
+                    bossGroup.shutdownGracefully();
+                    eventLoop.shutdownGracefully();
+                    workerGroup.shutdownGracefully();
+                    requestExecutor.shutdownGracefully();
+                    try {
+                        server.close();
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
+//                }
             }
         });
 
-        localMember = new Member((InetSocketAddress) server.localAddress());
+        localMember = new Member((InetSocketAddress) server.localAddress(), client);
         master = localMember;
 
         InetSocketAddress multicastAddress = new InetSocketAddress("224.0.67.67", 5001);
@@ -170,12 +176,9 @@ public class Cluster {
     }
 
     private void joinCluster() {
-        multicastServer.sendMulticast(new JoinOperation());
-
         CompletableFuture<Boolean> latch = new CompletableFuture<>();
         AtomicInteger count = new AtomicInteger();
         workerGroup.scheduleAtFixedRate(() -> {
-            multicastServer.sendMulticast(new JoinOperation());
             if (!master.equals(localMember)) {
                 latch.complete(true);
                 // this is a trick that stops this task. the exception will be swallowed.
@@ -183,7 +186,8 @@ public class Cluster {
             }
             if (count.incrementAndGet() >= 20)
                 latch.complete(false);
-        }, 0, 250, TimeUnit.MILLISECONDS);
+            multicastServer.sendMulticast(new ClusterCheckAndMergeOperation());
+        }, 0, 1, TimeUnit.SECONDS);
 
         memberState = memberState.FOLLOWER;
         if (!latch.join()) {
@@ -211,7 +215,8 @@ public class Cluster {
             members.add(member);
             if (isMaster())
                 heartbeatMap.put(member, System.currentTimeMillis());
-            membershipListeners.forEach(x -> eventLoop.execute(() -> x.memberAdded(member)));
+            if(!member.client)
+                membershipListeners.forEach(x -> eventLoop.execute(() -> x.memberAdded(member)));
         }
     }
 
@@ -243,10 +248,6 @@ public class Cluster {
     }
 
     private void scheduleClusteringTask() {
-        workerGroup.schedule(() -> {
-
-        }, 10, TimeUnit.MILLISECONDS);
-
         heartbeatTask = workerGroup.scheduleAtFixedRate(() -> {
             long time = System.currentTimeMillis();
 
@@ -402,20 +403,7 @@ public class Cluster {
         checkState(services.size() < maxSize, "Maximum number of allowed services is %s", maxSize);
 
         String finalName = name == null ? UUID.randomUUID().toString() : name;
-
-        Request<InternalService, Boolean> createServiceRequest = (service, ctx) -> {
-            T s = ser.newInstance(new ServiceContext(services.size(), name));
-            // service variable is not thread-safe
-            Cluster cluster = service.cluster;
-            synchronized (cluster.services) {
-                cluster.services.add(s);
-            }
-            cluster.serviceNameMap.put(finalName, s);
-            ctx.reply(true);
-        };
-
-        Boolean result = internalBus.replicateSafely(service -> !service.cluster.serviceNameMap.containsKey(finalName),
-                createServiceRequest).join();
+        Boolean result = internalBus.replicateSafely(new AddServiceRequest(finalName, name, ser)).join();
 
         if (!result)
             throw new IllegalArgumentException("there is already another service with same name");
@@ -433,13 +421,13 @@ public class Cluster {
      * Because there's no way to find out consistency issues without consensus methods like this one.
      * In Raft algorithm, since each log replication request uses consensus algorithm, it's easy to recover
      * from inconsistent states.
-     * Since consensus is quite expensive compared to fire-and-forget fashion, use this method when you really need.
+     * Since consensus is expensive compared to fire-and-forget fashion, use this method when you really need.
      *
      * @param request
      */
-    private CompletableFuture<Boolean> replicateSafelyInternal(Function<?, Boolean> preCheck, Request<?, Boolean> request, int serviceId) {
-        AppendLogEntryRequest requestFromMaster = new AppendLogEntryRequest(request, preCheck, serviceId);
-        return askInternal(getMaster(), requestFromMaster, serviceId);
+    private CompletableFuture<Boolean> replicateSafelyInternal(Request<?, Boolean> request, int serviceId) {
+        AppendLogEntryRequest requestFromMaster = new AppendLogEntryRequest(request, serviceId);
+        return askInternal(getMaster(), requestFromMaster, 0);
     }
 
     protected Map<Long, Request> pendingConsensusMessages() {
@@ -761,11 +749,7 @@ public class Cluster {
         }
 
         public CompletableFuture<Boolean> replicateSafely(Request<T, Boolean> req) {
-            return replicateSafelyInternal(null, req, service);
-        }
-
-        public CompletableFuture<Boolean> replicateSafely(Function<T, Boolean> preCheck, Request<T, Boolean> req) {
-            return replicateSafelyInternal(preCheck, req, service);
+            return replicateSafelyInternal(req, service);
         }
 
         public <R> CompletableFuture<R> tryAskUntilDone(Member member, Request<T, R> req, int numberOfTimes, Class<R> clazz) {
@@ -774,40 +758,6 @@ public class Cluster {
 
         public NioEventLoopGroup eventLoop() {
             return eventLoop;
-        }
-    }
-
-    public static class JoinOperation implements Operation<InternalService> {
-
-        @Override
-        public void run(InternalService service, OperationContext<Void> ctx) {
-            synchronized (service.cluster) {
-                Channel channel;
-                Member newMember = ctx.getSender();
-                try {
-                    channel = service.cluster.connectServer(newMember.address);
-                } catch (InterruptedException e) {
-                    return;
-                }
-                service.cluster.clusterConnection.put(newMember, channel);
-                service.cluster.addMemberInternal(newMember);
-
-                Member masterMember = service.cluster.getMaster();
-                Set<Member> members = service.cluster.getMembers();
-                Request<InternalService, Object> changeClusterOfNewMember = (service0, ctx0) ->
-                        service0.cluster.changeCluster(members, masterMember, true);
-                Request<InternalService, Object> addNewMember = (service0, ctx0) ->
-                        service0.cluster.addMemberInternal(newMember);
-
-                for (Member member : service.cluster.getMembers()) {
-                    service.cluster.internalBus.tryAskUntilDone(member, member.equals(newMember) ? changeClusterOfNewMember : addNewMember, 5)
-                            .whenComplete((result, ex) -> {
-                                if (ex != null && ex instanceof TimeoutException) {
-                                    service.cluster.removeMemberAsMaster(member, true);
-                                }
-                            });
-                }
-            }
         }
     }
 
@@ -831,5 +781,35 @@ public class Cluster {
         FOLLOWER, CANDIDATE, MASTER
     }
 
+    public static class AddServiceRequest implements Request<InternalService, Boolean> {
+        String finalName;
+        String name;
+        ServiceConstructor constructor;
+
+        public AddServiceRequest(String finalName, String name, ServiceConstructor constructor) {
+            this.finalName = finalName;
+            this.name = name;
+            this.constructor = constructor;
+        }
+
+        @Override
+        public void run(InternalService service, OperationContext<Boolean> ctx) {
+            Cluster cluster = service.cluster;
+
+            if (cluster.serviceNameMap.containsKey(finalName)) {
+                ctx.reply(false);
+            }
+
+
+
+            Service s = constructor.newInstance(cluster.new ServiceContext(cluster.services.size(), name));
+            // service variable is not thread-safe
+            synchronized (cluster.services) {
+                cluster.services.add(s);
+            }
+            cluster.serviceNameMap.put(finalName, s);
+            ctx.reply(true);
+        }
+    }
 
 }

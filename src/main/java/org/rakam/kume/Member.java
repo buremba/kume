@@ -14,6 +14,8 @@ public class Member {
     @FieldSerializer.Bind(InetSocketAddressSerializer.class)
     InetSocketAddress address;
 
+    boolean client;
+
     public InetSocketAddress getAddress() {
         return address;
     }
@@ -22,9 +24,17 @@ public class Member {
         this.address = address;
     }
 
+    public Member(InetSocketAddress address, boolean client) {
+        this.address = address;
+        this.client = client;
+    }
+
     @Override
     public String toString() {
-        return "Member{" + address + '}';
+        return "Member{" +
+                "address=" + address +
+                ", client=" + client +
+                '}';
     }
 
     @Override

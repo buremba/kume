@@ -24,6 +24,7 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BiFunction;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
@@ -431,6 +432,23 @@ public abstract class AbstractRingMap<C extends AbstractRingMap, M extends Map, 
 
     public void listenMigrations(MigrationListener migrationListener) {
         migrationListeners.add(migrationListener);
+    }
+
+    public <R> CompletableFuture<R> execute(K key, BiFunction<K, Modifiable<V>, R> execute) {
+        int bucketId = ring.findBucketId(key);
+        ConsistentHashRing.Bucket bucket = ring.getBucket(bucketId);
+
+        ArrayList<Member> members = bucket.members;
+
+        return getContext().ask(members.get(0), (service, ctx) -> {
+            Map<K, V> partition = service.getPartition(service.getRing().findBucketId(key));
+            Modifiable<V> vModifiable = new Modifiable<>(partition.get(key));
+            R apply = execute.apply(key, vModifiable);
+            if(vModifiable.changed()) {
+                partition.put(key, vModifiable.value());
+            }
+            ctx.reply(apply);
+        });
     }
 
     public static class PutMapOperation implements Request<AbstractRingMap, Void> {

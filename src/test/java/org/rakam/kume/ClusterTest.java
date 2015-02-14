@@ -1,12 +1,9 @@
 package org.rakam.kume;
 
-import ch.qos.logback.classic.Level;
-import ch.qos.logback.classic.Logger;
 import org.junit.Test;
 import org.rakam.kume.service.Service;
 import org.rakam.kume.service.ServiceInitializer;
 import org.rakam.kume.transport.OperationContext;
-import org.slf4j.LoggerFactory;
 
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
@@ -37,8 +34,6 @@ public class ClusterTest extends KumeTest {
 
     @Test
     public void testListeners() throws InterruptedException {
-        Logger root = (Logger) LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME);
-        root.setLevel(Level.DEBUG);
 
         ServiceInitializer constructors = new ServiceInitializer()
               .add("test", (bus) -> new SimpleService(bus));

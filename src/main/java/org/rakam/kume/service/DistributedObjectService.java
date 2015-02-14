@@ -34,7 +34,7 @@ public abstract class DistributedObjectService<C extends DistributedObjectServic
 
     // ringStore is used for sharing the ring between services in the same cluster.
     // we could store the ring as instance field but it would take more space since each GCounterService will have its own ring.
-    // since there may be multiple cluster that lives on same jvm instance, we use a map to store the ring for each cluster.
+    // since there may be multiple clusters that live on same jvm instance, we use a map to store the ring for each cluster.
     private static Map<Cluster, ConsistentHashRing> ringStore = new ConcurrentHashMap<>();
 
     public DistributedObjectService(Cluster.ServiceContext clusterContext, int replicationFactor) {

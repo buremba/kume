@@ -7,31 +7,28 @@ import java.util.stream.Stream;
  * Created by buremba <Burak Emre Kabakcı> on 22/12/14 01:38.
  */
 public class FutureUtil {
-    public static class MultipleFutureListener {
+    public static class MultipleFutureListener<V> {
         final int expected;
-        CompletableFuture<Void> f;
+        CompletableFuture<V> f;
         private int current = 0;
+        private V val;
 
         public MultipleFutureListener(int expected) {
             this.expected = expected;
             f = new CompletableFuture<>();
         }
 
-        public MultipleFutureListener(int expected, CompletableFuture<Void> f) {
-            this.expected = expected;
-            this.f = f;
-        }
-
         public static MultipleFutureListener from(Stream<CompletableFuture> stream) {
             MultipleFutureListener l = new MultipleFutureListener((int) stream.count());
-            stream.forEach(f -> f.thenRun(() -> {
+            stream.forEach(f -> f.thenAccept((v) -> {
                 l.current++;
+                l.val = v;
                 l.runIfDone();
             }));
             return l;
         }
 
-        public CompletableFuture<Void> get() {
+        public CompletableFuture<V> get() {
             return f;
         }
 
@@ -42,12 +39,14 @@ public class FutureUtil {
 
         private void runIfDone() {
             if (current >= expected)
-                f.complete(null);
+                f.complete(val);
         }
 
-        public void listen(CompletableFuture f) {
-            f.thenRun(() -> {
+        public void listen(CompletableFuture<V> f) {
+            f.thenAccept((v) -> {
                 current++;
+                // detect inconsistency
+                val = v;
                 runIfDone();
             });
         }

@@ -8,7 +8,6 @@ import org.rakam.kume.transport.Request;
 import org.rakam.kume.util.ConsistentHashRing;
 import org.rakam.kume.util.FutureUtil;
 import org.rakam.kume.util.ThrowableNioEventLoopGroup;
-import org.rakam.kume.util.ThrowableNioEventLoopGroup;
 
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -27,31 +26,28 @@ public class RingMap<K, V> extends AbstractRingMap<RingMap, Map, K, V> {
         super(serviceContext, ConcurrentHashMap::new, mergePolicy, replicationFactor);
     }
 
-    public CompletableFuture<Void> merge(K key, V value, BiFunction<? super V, ? super V, ? extends V> remappingFunction) {
+    public CompletableFuture<V> merge(K key, V value, BiFunction<? super V, ? super V, ? extends V> remappingFunction) {
         int bucketId = getRing().findBucketIdFromToken(hash(key));
         ConsistentHashRing.Bucket bucket = getRing().getBucket(bucketId);
 
         FutureUtil.MultipleFutureListener listener = new FutureUtil.MultipleFutureListener((bucket.members.size() / 2) + 1);
         for (Member next : bucket.members) {
-            if (next.equals(localMember)) {
-                mergeLocal(key, value, remappingFunction);
-                listener.increment();
-            } else {
-                listener.listen(getContext().ask(next, new MergeMapOperation(key, value, remappingFunction)));
-            }
+            listener.listen(getContext().ask(next, new MergeMapOperation(key, value, remappingFunction)));
         }
 
         return listener.get();
     }
 
-    protected void mergeLocal(K key, V value, BiFunction<? super V, ? super V, ? extends V> remappingFunction) {
+    protected V mergeLocal(K key, V value, BiFunction<? super V, ? super V, ? extends V> remappingFunction) {
         Map<K, V> partition = getPartition(getRing().findBucketId(key));
         V oldValue = partition.get(key);
         V newValue = (oldValue == null) ? value : remappingFunction.apply(oldValue, value);
         if (newValue == null) {
             partition.remove(key);
+            return null;
         } else {
             partition.put(key, newValue);
+            return newValue;
         }
     }
 
@@ -83,7 +79,7 @@ public class RingMap<K, V> extends AbstractRingMap<RingMap, Map, K, V> {
     }
 
 
-    public static class MergeMapOperation implements PartitionRestrictedMapRequest<RingMap, Void> {
+    public static class MergeMapOperation<V> implements PartitionRestrictedMapRequest<RingMap, V> {
         private final BiFunction remappingFunction;
         Object key;
         Object value;
@@ -96,7 +92,7 @@ public class RingMap<K, V> extends AbstractRingMap<RingMap, Map, K, V> {
 
         @Override
         public void run(RingMap service, OperationContext ctx) {
-            service.mergeLocal(key, value, remappingFunction);
+            ctx.reply(service.mergeLocal(key, value, remappingFunction));
         }
 
         @Override

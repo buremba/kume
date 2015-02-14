@@ -25,7 +25,6 @@ public class PacketDecoder extends ByteToMessageDecoder {
         try {
             if (!buffer.isReadable())
                 return;
-
             int packetNum = buffer.readInt();
             int serviceId = buffer.readUnsignedShort();
             LOGGER.trace("Decoding Packet{sequence={}, service={}}", packetNum, serviceId);
@@ -34,9 +33,6 @@ public class PacketDecoder extends ByteToMessageDecoder {
             try {
                 o = kryo.readClassAndObject(new ByteBufInput(buffer));
             } catch (KryoException e) {
-                LOGGER.warn("Couldn't deserialize object", e);
-                return;
-            } catch (Exception e) {
                 LOGGER.warn("Couldn't deserialize object", e);
                 return;
             }

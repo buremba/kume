@@ -1,6 +1,7 @@
 package org.rakam.kume.transport;
 
 import com.esotericsoftware.kryo.Kryo;
+import com.esotericsoftware.kryo.KryoException;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.MessageToByteEncoder;
@@ -22,13 +23,14 @@ public class PacketEncoder extends MessageToByteEncoder<Packet> {
 
     @Override
     protected void encode(ChannelHandlerContext ctx, Packet msg, ByteBuf out) throws Exception {
-        // TODO: maybe we can use one big output in order to avoid GC garbage
         try {
             LOGGER.trace("Encoding Packet{sequence={}, service={}}", msg.sequence, msg.service);
 
             out.writeInt(msg.sequence);
             out.writeShort(msg.service);
             kryo.writeClassAndObject(new ByteBufOutput(out), msg.data);
+        } catch (KryoException e) {
+            LOGGER.error("error while serializing packet {}", msg, e);
         } catch (Exception e) {
             LOGGER.error("error while serializing packet {}", msg, e);
         }

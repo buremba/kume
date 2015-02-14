@@ -16,7 +16,6 @@ import org.rakam.kume.Cluster;
 import org.rakam.kume.transport.PacketDecoder;
 import org.rakam.kume.transport.PacketEncoder;
 import org.rakam.kume.util.ThrowableNioEventLoopGroup;
-import org.rakam.kume.util.ThrowableNioEventLoopGroup;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

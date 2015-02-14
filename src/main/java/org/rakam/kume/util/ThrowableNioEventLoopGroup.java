@@ -1,11 +1,10 @@
 package org.rakam.kume.util;
 
+import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.util.concurrent.EventExecutor;
 
 import java.lang.Thread.UncaughtExceptionHandler;
-import java.util.concurrent.ThreadFactory;
-import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Created by buremba <Burak Emre Kabakcı> on 30/12/14 05:59.
@@ -15,7 +14,10 @@ public class ThrowableNioEventLoopGroup extends NioEventLoopGroup {
 
 
     public ThrowableNioEventLoopGroup(int nThreads, String name, UncaughtExceptionHandler exceptionHandler) {
-        super(nThreads, new ExceptionCatchingThreadFactory(name, exceptionHandler));
+        super(nThreads, new ThreadFactoryBuilder()
+                .setNameFormat(name + "-%d")
+                .setUncaughtExceptionHandler(exceptionHandler)
+                .build());
         children = super.children().stream().toArray(EventExecutor[]::new);
     }
 
@@ -27,20 +29,4 @@ public class ThrowableNioEventLoopGroup extends NioEventLoopGroup {
         return children[id % children.length];
     }
 
-    private static class ExceptionCatchingThreadFactory implements ThreadFactory {
-        private final AtomicInteger id = new AtomicInteger();
-        private final UncaughtExceptionHandler exceptionHandler;
-        private String name;
-
-        public ExceptionCatchingThreadFactory(String name, UncaughtExceptionHandler exceptionHandler) {
-            this.name = name;
-            this.exceptionHandler = exceptionHandler;
-        }
-
-        public Thread newThread(final Runnable r) {
-            Thread t = new Thread(r, name+"-"+id.getAndIncrement());
-            t.setUncaughtExceptionHandler(exceptionHandler);
-            return t;
-        }
-    }
 }

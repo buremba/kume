@@ -1,12 +1,9 @@
 package org.rakam.kume;
 
-import ch.qos.logback.classic.Level;
-import ch.qos.logback.classic.Logger;
 import org.junit.Test;
 import org.rakam.kume.service.ServiceInitializer;
 import org.rakam.kume.service.crdt.counter.GCounterService;
 import org.rakam.kume.service.ringmap.RingMap;
-import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.Map;
@@ -27,8 +24,8 @@ public class RingMapTest extends KumeTest {
     @Test
     public void testMa2p() throws InterruptedException, TimeoutException, ExecutionException, IOException {
 
-        Logger root = (Logger) LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME);
-        root.setLevel(Level.DEBUG);
+//        Logger root = (Logger) LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME);
+//        root.setLevel(Level.DEBUG);
 
         ServiceInitializer services = new ServiceInitializer()
                 .add("map", bus -> new RingMap<String, Long>(bus, GCounterService::merge, 2));
@@ -44,16 +41,14 @@ public class RingMapTest extends KumeTest {
 
     @Test
     public void testMa24p() throws InterruptedException, TimeoutException, ExecutionException {
-        Logger root = (Logger) LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME);
-        root.setLevel(Level.DEBUG);
 
         Cluster cluster0 = new ClusterBuilder().start();
 
-        RingMap<String, Integer> ringMap0 = cluster0.createOrGetService("tableName", bus -> new RingMap<String, Integer>(bus, Math::max, 2));
-
-        for (int i = 0; i < 1000; i++) {
-            ringMap0.put("test" + System.currentTimeMillis() + i, i).get();
-        }
+//        RingMap<String, Integer> ringMap0 = cluster0.createOrGetService("tableName", bus -> new RingMap<>(bus, Math::max, 2));
+//
+//        for (int i = 0; i < 1000; i++) {
+//            ringMap0.put("test" + System.currentTimeMillis() + i, i).get();
+//        }
     }
 
     @Test
