@@ -363,7 +363,7 @@ public abstract class AbstractRingMap<C extends AbstractRingMap, M extends Map, 
         return listener.get();
     }
 
-    public CompletableFuture<V> get(String key) {
+    public CompletableFuture<V> get(K key) {
         int bucketId = ring.findBucketId(key);
         ConsistentHashRing.Bucket bucket = ring.getBucket(bucketId);
 
