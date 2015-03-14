@@ -15,7 +15,10 @@ public class FutureUtil {
 
         public MultipleFutureListener(int expected) {
             this.expected = expected;
-            f = new CompletableFuture<>();
+            if(expected > 0)
+                f = new CompletableFuture<>();
+            else
+                f = CompletableFuture.completedFuture(null);
         }
 
         public static MultipleFutureListener from(Stream<CompletableFuture> stream) {
