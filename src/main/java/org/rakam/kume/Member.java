@@ -12,7 +12,7 @@ import java.net.InetSocketAddress;
 public class Member {
     @NotNull
     @FieldSerializer.Bind(InetSocketAddressSerializer.class)
-    InetSocketAddress address;
+    private final InetSocketAddress address;
 
     boolean client;
 

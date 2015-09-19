@@ -179,7 +179,7 @@ public class Cluster {
         CompletableFuture<Boolean> latch = new CompletableFuture<>();
         AtomicInteger count = new AtomicInteger();
         workerGroup.scheduleAtFixedRate(() -> {
-            if (!master.equals(localMember)) {
+            if (getMembers().size() > 0) {
                 latch.complete(true);
                 // this is a trick that stops this task. the exception will be swallowed.
                 throw new RuntimeException("found cluster");
@@ -372,9 +372,6 @@ public class Cluster {
     }
 
     public Set<Member> getMembers() {
-        // replace with collections and present a view instead of creating new HashSet
-        Set<Member> members = new HashSet<>(this.members);
-        members.add(localMember);
         return Collections.unmodifiableSet(members);
     }
 
@@ -591,7 +588,7 @@ public class Cluster {
 
             Channel created;
             try {
-                created = connectServer(member.address);
+                created = connectServer(member.getAddress());
             } catch (InterruptedException e) {
                 e.printStackTrace();
                 return null;

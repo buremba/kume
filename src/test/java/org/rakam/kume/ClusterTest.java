@@ -30,7 +30,6 @@ public class ClusterTest extends KumeTest {
         Cluster cluster1 = new ClusterBuilder().services(constructors).start();
         Cluster cluster2 = new ClusterBuilder().services(constructors).start();
 
-
         waitForDiscovery(cluster0, 2);
 
         MyService service = cluster0.getService("test");

@@ -38,7 +38,7 @@ public class ClusterCheckAndMergeOperation implements Operation<InternalService>
 
         Channel channel;
         try {
-            channel = cluster.connectServer(ctx.getSender().address);
+            channel = cluster.connectServer(ctx.getSender().getAddress());
         } catch (InterruptedException e) {
             LOGGER.trace("a server send me join request from udp but i can't connect him. ignoring");
             return;
@@ -80,7 +80,7 @@ public class ClusterCheckAndMergeOperation implements Operation<InternalService>
                 for (Member otherMember : otherMembers) {
                     Channel memberChannel;
                     try {
-                        memberChannel = cluster.connectServer(otherMember.address);
+                        memberChannel = cluster.connectServer(otherMember.getAddress());
                     } catch (InterruptedException e) {
                         otherMembers.remove(otherMember);
                         continue;
