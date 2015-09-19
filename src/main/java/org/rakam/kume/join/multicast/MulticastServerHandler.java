@@ -1,4 +1,4 @@
-package org.rakam.kume.network;
+package org.rakam.kume.join.multicast;
 
 import io.netty.bootstrap.Bootstrap;
 import io.netty.buffer.ByteBuf;
@@ -11,6 +11,7 @@ import io.netty.channel.socket.InternetProtocolFamily;
 import io.netty.channel.socket.nio.NioDatagramChannel;
 import io.netty.util.NetUtil;
 import org.rakam.kume.Cluster;
+import org.rakam.kume.InternalService;
 import org.rakam.kume.Member;
 import org.rakam.kume.transport.Operation;
 import org.rakam.kume.transport.MulticastPacket;
@@ -69,7 +70,7 @@ public class MulticastServerHandler {
         ByteBuf buf = Unpooled.wrappedBuffer(Serializer.toByteBuf(new MulticastPacket(req, localMember)));
         server.writeAndFlush(new DatagramPacket(buf, address, localMember.getAddress()));
     }
-    public void send(InetSocketAddress address, Operation<Cluster.InternalService> req) {
+    public void send(InetSocketAddress address, Operation<InternalService> req) {
         ByteBuf buf = Unpooled.wrappedBuffer(Serializer.toByteBuf(new MulticastPacket(req, localMember)));
         server.writeAndFlush(new DatagramPacket(buf, address, localMember.getAddress()));
     }

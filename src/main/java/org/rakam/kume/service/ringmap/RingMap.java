@@ -1,8 +1,8 @@
 package org.rakam.kume.service.ringmap;
 
 import io.netty.util.concurrent.EventExecutor;
-import org.rakam.kume.Cluster;
 import org.rakam.kume.Member;
+import org.rakam.kume.ServiceContext;
 import org.rakam.kume.transport.OperationContext;
 import org.rakam.kume.transport.Request;
 import org.rakam.kume.util.ConsistentHashRing;
@@ -18,11 +18,11 @@ import java.util.function.Supplier;
 import static org.rakam.kume.util.ConsistentHashRing.hash;
 
 public class RingMap<K, V> extends AbstractRingMap<RingMap, Map, K, V> {
-    public RingMap(Cluster.ServiceContext<RingMap> serviceContext, Supplier<Map> mapSupplier, MapMergePolicy<V> mergePolicy, int replicationFactor) {
+    public RingMap(ServiceContext<RingMap> serviceContext, Supplier<Map> mapSupplier, MapMergePolicy<V> mergePolicy, int replicationFactor) {
         super(serviceContext, mapSupplier, mergePolicy, replicationFactor);
     }
 
-    public RingMap(Cluster.ServiceContext<RingMap> serviceContext, MapMergePolicy<V> mergePolicy, int replicationFactor) {
+    public RingMap(ServiceContext<RingMap> serviceContext, MapMergePolicy<V> mergePolicy, int replicationFactor) {
         super(serviceContext, ConcurrentHashMap::new, mergePolicy, replicationFactor);
     }
 

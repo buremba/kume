@@ -1,4 +1,4 @@
-package org.rakam.kume.network;
+package org.rakam.kume.join.multicast;
 
 import com.esotericsoftware.kryo.KryoException;
 import io.netty.buffer.ByteBuf;

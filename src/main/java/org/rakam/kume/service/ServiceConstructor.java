@@ -1,7 +1,7 @@
 package org.rakam.kume.service;
 
 
-import org.rakam.kume.Cluster;
+import org.rakam.kume.ServiceContext;
 
 import java.io.Serializable;
 
@@ -10,5 +10,5 @@ import java.io.Serializable;
  */
 @FunctionalInterface
 public interface ServiceConstructor<T extends Service> extends Serializable {
-    public T newInstance(Cluster.ServiceContext bus);
+    public T newInstance(ServiceContext bus);
 }

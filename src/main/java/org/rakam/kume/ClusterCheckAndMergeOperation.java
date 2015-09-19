@@ -19,11 +19,11 @@ import static com.google.common.base.Preconditions.checkState;
 /**
  * Created by buremba <Burak Emre Kabakcı> on 28/12/14 20:07.
  */
-public class ClusterCheckAndMergeOperation implements Operation<Cluster.InternalService> {
+public class ClusterCheckAndMergeOperation implements Operation<InternalService> {
     final static Logger LOGGER = LoggerFactory.getLogger(ClusterCheckAndMergeOperation.class);
 
     @Override
-    public void run(Cluster.InternalService service, OperationContext<Void> ctx) {
+    public void run(InternalService service, OperationContext<Void> ctx) {
         Cluster cluster = service.cluster;
 
         Set<Member> clusterMembers = cluster.getMembers();
@@ -117,7 +117,7 @@ public class ClusterCheckAndMergeOperation implements Operation<Cluster.Internal
         }
     }
 
-    public static class JoinThisClusterRequest implements Request<Cluster.InternalService, Void> {
+    public static class JoinThisClusterRequest implements Request<InternalService, Void> {
         final Set<Member> members;
         final Member masterNode;
 
@@ -127,14 +127,14 @@ public class ClusterCheckAndMergeOperation implements Operation<Cluster.Internal
         }
 
         @Override
-        public void run(Cluster.InternalService service, OperationContext<Void> ctx) {
-            LOGGER.trace("someone wants me in his cluster, i will join his party.");
+        public void run(InternalService service, OperationContext<Void> ctx) {
+            LOGGER.trace("someone wants me in his cluster, i will join her party.");
             service.cluster.changeCluster(members, masterNode, false);
             ctx.reply(null);
         }
     }
 
-    public static class MembersJoinedRequest implements Request<Cluster.InternalService, Boolean> {
+    public static class MembersJoinedRequest implements Request<InternalService, Boolean> {
         final Set<Member> members;
 
         public MembersJoinedRequest(Set<Member> members) {
@@ -142,7 +142,7 @@ public class ClusterCheckAndMergeOperation implements Operation<Cluster.Internal
         }
 
         @Override
-        public void run(Cluster.InternalService service, OperationContext<Boolean> ctx) {
+        public void run(InternalService service, OperationContext<Boolean> ctx) {
             LOGGER.trace("there are new members in the cluster. welcoming them.");
             if(members.size() > 1)
                 service.cluster.addMembersInternal(members);
@@ -154,10 +154,10 @@ public class ClusterCheckAndMergeOperation implements Operation<Cluster.Internal
         }
     }
 
-    public static class GetInformationFromDiscoveredCluster implements Request<Cluster.InternalService, Tuple> {
+    public static class GetInformationFromDiscoveredCluster implements Request<InternalService, Tuple> {
 
         @Override
-        public void run(Cluster.InternalService service, OperationContext<Tuple> ctx) {
+        public void run(InternalService service, OperationContext<Tuple> ctx) {
             Cluster cluster1 = service.cluster;
             Tuple<Set, Long> obj = new Tuple<>(cluster1.getMembers(), cluster1.getLastCommitIndex().get());
             LOGGER.trace("i was asked my cluster status. here it is: " +

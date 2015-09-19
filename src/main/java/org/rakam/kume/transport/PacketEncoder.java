@@ -24,8 +24,6 @@ public class PacketEncoder extends MessageToByteEncoder<Packet> {
     @Override
     protected void encode(ChannelHandlerContext ctx, Packet msg, ByteBuf out) throws Exception {
         try {
-            LOGGER.trace("Encoding Packet{sequence={}, service={}}", msg.sequence, msg.service);
-
             out.writeInt(msg.sequence);
             out.writeShort(msg.service);
             kryo.writeClassAndObject(new ByteBufOutput(out), msg.data);

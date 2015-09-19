@@ -27,8 +27,6 @@ public class PacketDecoder extends ByteToMessageDecoder {
                 return;
             int packetNum = buffer.readInt();
             int serviceId = buffer.readUnsignedShort();
-            LOGGER.trace("Decoding Packet{sequence={}, service={}}", packetNum, serviceId);
-
             Object o;
             try {
                 o = kryo.readClassAndObject(new ByteBufInput(buffer));

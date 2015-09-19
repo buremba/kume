@@ -3,6 +3,7 @@ package org.rakam.kume.service;
 import org.rakam.kume.Cluster;
 import org.rakam.kume.Member;
 import org.rakam.kume.MembershipListener;
+import org.rakam.kume.ServiceContext;
 import org.rakam.kume.transport.Operation;
 import org.rakam.kume.transport.OperationContext;
 import org.rakam.kume.transport.Request;
@@ -23,7 +24,7 @@ import java.util.stream.Stream;
  */
 public abstract class DistributedObjectService<C extends DistributedObjectService, T> extends Service implements MembershipListener {
     final int replicationFactor;
-    private final Cluster.ServiceContext<C> ctx;
+    private final ServiceContext<C> ctx;
     private List<Member> ownedMembers;
 
     static Random random = new Random();
@@ -37,7 +38,7 @@ public abstract class DistributedObjectService<C extends DistributedObjectServic
     // since there may be multiple clusters that live on same jvm instance, we use a map to store the ring for each cluster.
     private static Map<Cluster, ConsistentHashRing> ringStore = new ConcurrentHashMap<>();
 
-    public DistributedObjectService(Cluster.ServiceContext clusterContext, int replicationFactor) {
+    public DistributedObjectService(ServiceContext clusterContext, int replicationFactor) {
         this.ctx = clusterContext;
         this.replicationFactor = replicationFactor;
         Cluster cluster = ctx.getCluster();
@@ -49,7 +50,7 @@ public abstract class DistributedObjectService<C extends DistributedObjectServic
         ownedMembers = ring.findBucket(ctx.serviceName()).members;
     }
 
-    public Cluster.ServiceContext<C> getContext() {
+    public ServiceContext<C> getContext() {
         return ctx;
     }
 

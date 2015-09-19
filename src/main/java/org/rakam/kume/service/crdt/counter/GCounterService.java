@@ -1,6 +1,6 @@
 package org.rakam.kume.service.crdt.counter;
 
-import org.rakam.kume.Cluster;
+import org.rakam.kume.ServiceContext;
 import org.rakam.kume.service.DistributedObjectServiceAdapter;
 
 import static com.google.common.base.Preconditions.checkArgument;
@@ -12,11 +12,11 @@ public class GCounterService extends DistributedObjectServiceAdapter<GCounterSer
     // TODO: Add DistributedLongService for long primitive type?
     // TODO: Move call methods to separate classes and register them with Kryo.
 
-    public GCounterService(Cluster.ServiceContext clusterContext, Long l, int replicationFactor) {
+    public GCounterService(ServiceContext clusterContext, Long l, int replicationFactor) {
         super(clusterContext, l, replicationFactor);
     }
 
-    public GCounterService(Cluster.ServiceContext clusterContext, int replicationFactor) {
+    public GCounterService(ServiceContext clusterContext, int replicationFactor) {
         super(clusterContext, 0L, replicationFactor);
     }
 

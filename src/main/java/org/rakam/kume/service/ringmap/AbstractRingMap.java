@@ -4,6 +4,7 @@ import org.rakam.kume.Cluster;
 import org.rakam.kume.Member;
 import org.rakam.kume.MembershipListener;
 import org.rakam.kume.MigrationListener;
+import org.rakam.kume.ServiceContext;
 import org.rakam.kume.service.PausableService;
 import org.rakam.kume.transport.OperationContext;
 import org.rakam.kume.transport.Request;
@@ -49,7 +50,7 @@ public abstract class AbstractRingMap<C extends AbstractRingMap, M extends Map, 
     private LinkedList<MigrationListener> migrationListeners = new LinkedList<>();
     Map<ConsistentHashRing.TokenRange, Map<K, V>> dataWaitingForMigration = new HashMap<>();
 
-    public AbstractRingMap(Cluster.ServiceContext<C> serviceContext, Supplier<M> mapSupplier, MapMergePolicy<V> mergePolicy, int replicationFactor) {
+    public AbstractRingMap(ServiceContext<C> serviceContext, Supplier<M> mapSupplier, MapMergePolicy<V> mergePolicy, int replicationFactor) {
         super(serviceContext);
         this.mergePolicy = mergePolicy;
         this.replicationFactor = replicationFactor;

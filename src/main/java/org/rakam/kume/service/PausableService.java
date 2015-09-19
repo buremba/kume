@@ -1,6 +1,6 @@
 package org.rakam.kume.service;
 
-import org.rakam.kume.Cluster;
+import org.rakam.kume.ServiceContext;
 import org.rakam.kume.transport.OperationContext;
 
 import java.util.ArrayDeque;
@@ -9,12 +9,12 @@ import java.util.ArrayDeque;
  * Created by buremba <Burak Emre Kabakcı> on 24/11/14 02:12.
  */
 public abstract class PausableService<T extends Service> extends Service {
-    private final Cluster.ServiceContext<T> ctx;
+    private final ServiceContext<T> ctx;
     ArrayDeque<FutureRequest> objectQueue = new ArrayDeque();
     ArrayDeque<Runnable> runnableQueue = new ArrayDeque();
     private volatile boolean paused  = false;
 
-    public PausableService(Cluster.ServiceContext<T> ctx) {
+    public PausableService(ServiceContext<T> ctx) {
         this.ctx = ctx;
     }
 
@@ -37,7 +37,7 @@ public abstract class PausableService<T extends Service> extends Service {
         return false;
     }
 
-    public Cluster.ServiceContext<T> getContext() {
+    public ServiceContext<T> getContext() {
         return ctx;
     }
 

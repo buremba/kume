@@ -1,6 +1,6 @@
 package org.rakam.kume.service;
 
-import org.rakam.kume.Cluster;
+import org.rakam.kume.ServiceContext;
 
 import java.util.function.Consumer;
 
@@ -10,7 +10,7 @@ import java.util.function.Consumer;
 public abstract class DistributedObjectServiceAdapter<C extends DistributedObjectServiceAdapter<C, T>, T> extends DistributedObjectService<C, T> {
     protected T value;
 
-    public DistributedObjectServiceAdapter(Cluster.ServiceContext clusterContext, T value, int replicationFactor) {
+    public DistributedObjectServiceAdapter(ServiceContext clusterContext, T value, int replicationFactor) {
         super(clusterContext, replicationFactor);
         this.value = value;
     }

@@ -16,14 +16,24 @@ public class ClusterBuilder {
     private InetSocketAddress serverAddress;
     private boolean mustJoinCluster;
     private boolean client = false;
+    private JoinerService joinerService;
 
     public ClusterBuilder members(Collection<Member> members) {
         this.members = members;
         return this;
     }
 
+    public ClusterBuilder joinStrategy(JoinerService joinerService) {
+        this.joinerService = joinerService;
+        return this;
+    }
+
     public Collection<Member> members() {
         return members;
+    }
+
+    public JoinerService joinStrategy() {
+        return joinerService;
     }
 
     public ClusterBuilder services(ServiceInitializer services) {

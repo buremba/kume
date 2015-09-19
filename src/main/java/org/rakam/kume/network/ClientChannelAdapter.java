@@ -27,7 +27,6 @@ public class ClientChannelAdapter extends ChannelInboundHandlerAdapter {
         Packet read = (Packet) msg;
         CompletableFuture<Object> ifPresent = messageHandlers.remove(read.sequence);
         if (ifPresent != null) {
-            LOGGER.trace("Executing callback of package {}", read);
             ifPresent.complete(read.getData());
         } else {
             LOGGER.warn("unhandled packet {}", msg);

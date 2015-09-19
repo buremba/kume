@@ -3,7 +3,7 @@ package org.rakam.kume.transport.serialization;
 import com.esotericsoftware.kryo.Kryo;
 import com.esotericsoftware.kryo.Serializer;
 import com.google.common.collect.ImmutableMap;
-import org.rakam.kume.Cluster;
+import org.rakam.kume.HeartbeatRequest;
 import org.rakam.kume.Member;
 import org.rakam.kume.transport.serialization.serializers.InetSocketAddressSerializer;
 import org.rakam.kume.transport.serialization.serializers.UnmodifiableCollectionsSerializer;
@@ -26,7 +26,7 @@ public class KryoFactory {
 
     private static final Class<?>[] REG_CLASSES = {
             Collections.unmodifiableList(new ArrayList()).getClass(),
-            Cluster.HeartbeatRequest.class,
+            HeartbeatRequest.class,
             Member.class,
             InetSocketAddress.class,
             ConsistentHashRing.class,
