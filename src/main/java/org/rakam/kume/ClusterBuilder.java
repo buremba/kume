@@ -82,6 +82,6 @@ public class ClusterBuilder {
         if(services==null)
             services = new ServiceInitializer();
 
-        return new Cluster(members, services, serverAddress, mustJoinCluster, client);
+        return new Cluster(members, services, serverAddress, joinerService, mustJoinCluster, client);
     }
 }
