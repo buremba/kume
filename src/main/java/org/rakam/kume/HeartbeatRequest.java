@@ -28,19 +28,18 @@ public class HeartbeatRequest implements Operation<InternalService> {
 
     @Override
     public void run(InternalService service, OperationContext ctx) {
-        Member sender = ctx.getSender();
-//        Member masterMember = service.cluster.getMaster();
+        Member masterMember = service.cluster.getMaster();
         if (sender == null) {
             return;
         }
-//        if (sender.equals(masterMember)) {
-//            service.cluster.lastContactedTimeMaster = System.currentTimeMillis();
-//        } else {
-//            Cluster.LOGGER.trace("got message from a member who thinks he is the master: {0}", sender);
-//            if (!service.cluster.getMembers().contains(sender)) {
-//                Cluster.LOGGER.trace("it seems this is new master added me in his cluster and" +
-//                        " it will most probably send changeCluster request to me");
-//            }
-//        }
+        if (sender.equals(masterMember)) {
+            service.cluster.lastContactedTimeMaster = System.currentTimeMillis();
+        } else {
+            Cluster.LOGGER.trace("got message from a member who thinks he is the master: {0}", sender);
+            if (!service.cluster.getMembers().contains(sender)) {
+                Cluster.LOGGER.trace("it seems this is new master added me in his cluster and" +
+                        " it will most probably send changeCluster request to me");
+            }
+        }
     }
 }

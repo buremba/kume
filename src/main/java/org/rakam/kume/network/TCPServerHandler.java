@@ -37,13 +37,12 @@ public class TCPServerHandler {
                 .option(ChannelOption.AUTO_READ, false)
                 .option(ChannelOption.SO_BACKLOG, 100)
                 .childHandler(new ChannelInitializer<SocketChannel>() {
-
                     @Override
                     public void initChannel(SocketChannel ch) throws Exception {
                         ChannelPipeline p = ch.pipeline();
                         p.addLast("frameDecoder", new LengthFieldBasedFrameDecoder(1048576, 0, 4, 0, 4));
                         p.addLast("packetDecoder", new PacketDecoder());
-                        p.addLast("frameEncoder", new LengthFieldPrepender(4));
+                        p.addLast("frameEncoder", new LengthFieldPrepender(Integer.BYTES));
                         p.addLast("packetEncoder", new PacketEncoder());
                         p.addLast(new ServerChannelAdapter(cluster, eventExecutor));
                     }

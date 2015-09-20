@@ -3,6 +3,7 @@ package org.rakam.kume.transport.serialization;
 import com.esotericsoftware.kryo.Kryo;
 import com.esotericsoftware.kryo.Serializer;
 import com.google.common.collect.ImmutableMap;
+import org.objenesis.strategy.StdInstantiatorStrategy;
 import org.rakam.kume.HeartbeatRequest;
 import org.rakam.kume.Member;
 import org.rakam.kume.transport.serialization.serializers.InetSocketAddressSerializer;
@@ -50,6 +51,7 @@ public class KryoFactory {
                 else
                     kryo.register(clazz, serializer);
             }
+            kryo.setInstantiatorStrategy(new Kryo.DefaultInstantiatorStrategy(new StdInstantiatorStrategy()));
             return kryo;
         }
     };

@@ -13,15 +13,19 @@ public class Member {
     @NotNull
     @FieldSerializer.Bind(InetSocketAddressSerializer.class)
     private final InetSocketAddress address;
-
-    boolean client;
+    private final boolean client;
 
     public InetSocketAddress getAddress() {
         return address;
     }
 
+    public boolean isClient() {
+        return client;
+    }
+
     public Member(InetSocketAddress address) {
         this.address = address;
+        client = false;
     }
 
     public Member(InetSocketAddress address, boolean client) {
@@ -56,5 +60,6 @@ public class Member {
 
     public Member(String host, int port) {
         address = new InetSocketAddress(host, port);
+        client = false;
     }
 }

@@ -1,9 +1,13 @@
 package org.rakam.kume;
 
+import com.google.common.base.Throwables;
 import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.RemovalCause;
 import com.google.common.cache.RemovalNotification;
+import com.google.common.collect.ImmutableSet;
+import com.google.common.collect.Iterables;
+import com.google.common.collect.Iterators;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.buffer.PooledByteBufAllocator;
 import io.netty.channel.Channel;
@@ -94,7 +98,7 @@ public class Cluster {
     private final JoinerService joinerService;
     private Member master;
     private Set<Member> members;
-    private long lastContactedTimeMaster;
+    long lastContactedTimeMaster;
     final private TCPServerHandler server;
     private AtomicInteger currentTerm;
     final private List<MembershipListener> membershipListeners = Collections.synchronizedList(new ArrayList<>());
@@ -173,6 +177,7 @@ public class Cluster {
                 }
             });
         }
+        members.stream().forEach(this::getConnection);
     }
 
     private void joinCluster() {
@@ -214,7 +219,7 @@ public class Cluster {
             members.add(member);
             if (isMaster())
                 heartbeatMap.put(member, System.currentTimeMillis());
-            if(!member.client)
+            if(!member.isClient())
                 membershipListeners.forEach(x -> eventLoop.execute(() -> x.memberAdded(member)));
         }
     }
@@ -251,13 +256,12 @@ public class Cluster {
             long time = System.currentTimeMillis();
 
             if (isMaster()) {
-                heartbeatMap.forEach((member, lastResponse) -> {
-                    if (time - lastResponse > 2000) {
-                        removeMemberAsMaster(member, true);
-                    }
-                });
+//                heartbeatMap.forEach((member, lastResponse) -> {
+//                    if (time - lastResponse > 20000) {
+//                        removeMemberAsMaster(member, true);
+//                    }
+//                });
                 members.forEach(member -> internalBus.send(member, new HeartbeatRequest(localMember)));
-//                multicastServer.sendMulticast(new HeartbeatRequest());
             } else {
                 if (time - lastContactedTimeMaster > 500) {
                     workerGroup.schedule(() -> {
@@ -325,12 +329,10 @@ public class Cluster {
         if (!isMaster())
             throw new IllegalStateException();
 
-        return;
+        heartbeatMap.remove(member);
+        members.remove(member);
 
-//        heartbeatMap.remove(member);
-//        members.remove(member);
 //        if(replicate) {
-
 //        internalBus.sendAllMembers((cluster, ctx) -> {
 //            cluster.clusterConnection.remove(member);
 //            Cluster.LOGGER.info("Member removed {}", member);
@@ -372,7 +374,7 @@ public class Cluster {
     }
 
     public Set<Member> getMembers() {
-        return Collections.unmodifiableSet(members);
+        return ImmutableSet.copyOf(Iterables.concat(members, () -> Iterators.forArray(localMember)));
     }
 
     public <T extends Service> T getService(String serviceName) {
@@ -451,12 +453,15 @@ public class Cluster {
 
     public void sendAllMembersInternal(Object bytes, boolean includeThisMember, int service) {
         clusterConnection.forEach((member, conn) -> {
-            if (!member.equals(localMember)) {
+            if (!member.equals(localMember) && !member.isClient()) {
                 sendInternal(conn, bytes, service);
             }
         });
 
         if (includeThisMember) {
+            if(localMember.isClient()) {
+                throw new IllegalArgumentException();
+            }
             Service s = services.get(service);
             LocalOperationContext ctx = new LocalOperationContext(null, service, localMember);
             s.handle(requestExecutor, ctx, bytes);
@@ -590,8 +595,7 @@ public class Cluster {
             try {
                 created = connectServer(member.getAddress());
             } catch (InterruptedException e) {
-                e.printStackTrace();
-                return null;
+                throw Throwables.propagate(e);
             }
             synchronized (this) {
                 clusterConnection.put(member, created);

@@ -48,6 +48,7 @@ public class ServerChannelAdapter extends ChannelInboundHandlerAdapter {
 
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
-        super.exceptionCaught(ctx, cause);
+        LOGGER.warn("Dropped unsupported package.", cause);
+        ctx.close();
     }
 }

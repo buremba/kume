@@ -68,6 +68,11 @@ public class ClusterBuilder {
         return this;
     }
 
+    public ClusterBuilder serverAddress(String host, int port) {
+        this.serverAddress = new InetSocketAddress(host, port);
+        return this;
+    }
+
     public InetSocketAddress serverAddress() {
         return serverAddress;
     }
