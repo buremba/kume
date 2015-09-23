@@ -17,6 +17,6 @@ class GetRequest<K, V> implements Request<AbstractRingMap,V> {
 
     @Override
     public void run(AbstractRingMap service, OperationContext ctx) {
-        ctx.reply(service.getPartition(ringMap.getRing().findBucketId(key)).get(key));
+        ctx.reply(service.getBucket(ringMap.getRing().findBucketId(key)).get(key));
     }
 }

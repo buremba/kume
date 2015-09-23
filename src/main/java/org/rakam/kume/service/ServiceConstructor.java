@@ -10,5 +10,5 @@ import java.io.Serializable;
  */
 @FunctionalInterface
 public interface ServiceConstructor<T extends Service> extends Serializable {
-    public T newInstance(ServiceContext bus);
+    T newInstance(ServiceContext bus);
 }

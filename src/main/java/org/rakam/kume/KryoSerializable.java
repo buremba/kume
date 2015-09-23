@@ -13,10 +13,20 @@
  */
 package org.rakam.kume;
 
+import java.lang.annotation.Documented;
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Inherited;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Target;
+
 /**
- * Created by buremba <Burak Emre Kabakcı> on 19/09/15 05:46.
+ * Created by buremba <Burak Emre Kabakcı> on 22/09/15 23:55.
  */
-public interface JoinerService {
-    void onStart(ClusterMembership membership);
-    default void onClose(){}
+@Inherited
+@Target({ElementType.TYPE, ElementType.METHOD})
+@Retention(RetentionPolicy.RUNTIME)
+@Documented
+public @interface KryoSerializable {
+    int id();
 }

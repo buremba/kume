@@ -36,7 +36,7 @@ class ChangeRingRequest<K, V> implements Request<RingMap, Map<K, V>> {
 
     @Override
     public void run(RingMap service, OperationContext ctx) {
-        synchronized (service) {
+//        synchronized (service) {
             Map<K, V> moveEntries = new HashMap<>();
 
             ConsistentHashRing serviceRing = service.getRing();
@@ -47,7 +47,7 @@ class ChangeRingRequest<K, V> implements Request<RingMap, Map<K, V>> {
 
             for (int bckIdz = startBucket; bckIdz <= loopEnd; bckIdz++) {
                 int bckId = bckIdz % serviceRing.getBucketCount();
-                Map<K, V> partition = service.getPartition(bckId);
+                Map<K, V> partition = service.getBucket(bckId);
                 if (partition != null) {
                     long endToken = serviceRing.getBucket(bckId + 1).token-1;
                     long startToken = serviceRing.getBucket(bckId).token;
@@ -124,5 +124,5 @@ class ChangeRingRequest<K, V> implements Request<RingMap, Map<K, V>> {
 
             ctx.reply(moveEntries);
         }
-    }
+//    }
 }

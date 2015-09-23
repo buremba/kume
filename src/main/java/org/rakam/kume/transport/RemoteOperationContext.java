@@ -1,7 +1,6 @@
 package org.rakam.kume.transport;
 
 import io.netty.channel.ChannelHandlerContext;
-import org.rakam.kume.Cluster;
 import org.rakam.kume.Member;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -15,13 +14,11 @@ public class RemoteOperationContext implements OperationContext {
     private final ChannelHandlerContext ctx;
     private final int packageId;
     private final int serviceId;
-    private final Cluster cluster;
 
-    public RemoteOperationContext(ChannelHandlerContext ctx, int serviceId, int packageId, Cluster cluster) {
+    public RemoteOperationContext(ChannelHandlerContext ctx, int serviceId, int packageId) {
         this.serviceId =  serviceId;
         this.ctx = ctx;
         this.packageId =  packageId;
-        this.cluster =  cluster;
     }
 
     @Override

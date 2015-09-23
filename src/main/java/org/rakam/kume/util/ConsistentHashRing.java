@@ -16,7 +16,6 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -45,17 +44,13 @@ public class ConsistentHashRing {
         this.replicationFactor = replicationFactor;
 
         // todo: find a way to construct buckets without adding elements one by one.
-        Iterator<Member> iterator = members.iterator();
-        if (iterator.hasNext()) {
-            Bucket[] list = findBucketListForNewNode(iterator.next(), null);
-            while (iterator.hasNext()) {
-                list = findBucketListForNewNode(iterator.next(), list);
-            }
-            buckets = list;
-        } else {
-            throw new IllegalArgumentException("member list must have at least one member");
+        Bucket[] list = null;
+        for (Member member : members.stream().sorted(this::compareMembers).collect(Collectors.toList())) {
+            list = findBucketListForNewNode(member, list);
         }
+        buckets = list;
     }
+
 
     protected ConsistentHashRing(Bucket[] buckets, int bucketPerNode, int replicationFactor) {
         this.bucketPerNode = bucketPerNode;
@@ -69,6 +64,12 @@ public class ConsistentHashRing {
             str.append("[" + range.start + "-" + range.end + ", " + members.size() + " members]");
         });
         return str.toString();
+    }
+
+    private int compareMembers(Member o1, Member o2) {
+        String o1Str = o1.getAddress().getHostString() + o1.getAddress().getPort();
+        String o2Str = o2.getAddress().getHostString() + o2.getAddress().getPort();
+        return o1Str.compareTo(o2Str);
     }
 
     public static boolean isTokenBetween(long hash, long start, long end) {

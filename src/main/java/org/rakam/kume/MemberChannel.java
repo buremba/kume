@@ -13,10 +13,15 @@
  */
 package org.rakam.kume;
 
+import org.rakam.kume.transport.Packet;
+
+import java.util.concurrent.CompletableFuture;
+
 /**
- * Created by buremba <Burak Emre Kabakcı> on 19/09/15 05:46.
+ * Created by buremba <Burak Emre Kabakcı> on 22/09/15 20:13.
  */
-public interface JoinerService {
-    void onStart(ClusterMembership membership);
-    default void onClose(){}
+public interface MemberChannel {
+    CompletableFuture ask(Packet message);
+    void send(Packet message);
+    void close() throws InterruptedException;
 }

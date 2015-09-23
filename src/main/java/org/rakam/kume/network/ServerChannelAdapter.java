@@ -2,13 +2,12 @@ package org.rakam.kume.network;
 
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
-import org.rakam.kume.Cluster;
-import org.rakam.kume.util.ThrowableNioEventLoopGroup;
-import org.rakam.kume.transport.RemoteOperationContext;
-import org.rakam.kume.transport.Request;
 import org.rakam.kume.service.Service;
 import org.rakam.kume.transport.Packet;
+import org.rakam.kume.transport.RemoteOperationContext;
 import org.rakam.kume.transport.PacketDecoder;
+import org.rakam.kume.transport.Request;
+import org.rakam.kume.util.ThrowableNioEventLoopGroup;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -21,12 +20,11 @@ public class ServerChannelAdapter extends ChannelInboundHandlerAdapter {
     final static Logger LOGGER = LoggerFactory.getLogger(PacketDecoder.class);
 
     List<Service> services;
-    Cluster eventBus;
+
     ThrowableNioEventLoopGroup eventExecutors;
 
-    public ServerChannelAdapter(Cluster bus, ThrowableNioEventLoopGroup executor) {
-        this.services = bus.getServices();
-        this.eventBus = bus;
+    public ServerChannelAdapter(List<Service> services, ThrowableNioEventLoopGroup executor) {
+        this.services = services;
         eventExecutors = executor;
     }
 
@@ -37,7 +35,7 @@ public class ServerChannelAdapter extends ChannelInboundHandlerAdapter {
         Packet read = (Packet) msg;
         Object o = read.getData();
 
-        RemoteOperationContext ctx1 = new RemoteOperationContext(ctx, read.service, read.sequence, eventBus);
+        RemoteOperationContext ctx1 = new RemoteOperationContext(ctx, read.service, read.sequence);
         Service service = services.get(read.service);
         if (o instanceof Request) {
             service.handle(eventExecutors, ctx1, (Request) o);

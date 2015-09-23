@@ -1,4 +1,4 @@
-/*
+package org.rakam.kume;/*
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -11,12 +11,14 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.rakam.kume;
 
 /**
- * Created by buremba <Burak Emre Kabakcı> on 19/09/15 05:46.
+ * Created by buremba <Burak Emre Kabakcı> on 22/09/15 20:20.
  */
-public interface JoinerService {
-    void onStart(ClusterMembership membership);
-    default void onClose(){}
+public interface Transport {
+    MemberChannel connect(Member member) throws InterruptedException;
+    void close();
+    void initialize();
+//    void pause();
+//    void resume();
 }

@@ -12,7 +12,7 @@ import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.handler.codec.LengthFieldBasedFrameDecoder;
 import io.netty.handler.codec.LengthFieldPrepender;
-import org.rakam.kume.Cluster;
+import org.rakam.kume.service.Service;
 import org.rakam.kume.transport.PacketDecoder;
 import org.rakam.kume.transport.PacketEncoder;
 import org.rakam.kume.util.ThrowableNioEventLoopGroup;
@@ -21,6 +21,7 @@ import org.slf4j.LoggerFactory;
 
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
+import java.util.List;
 
 /**
  * Created by buremba <Burak Emre Kabakcı> on 03/01/15 15:43.
@@ -29,7 +30,7 @@ public class TCPServerHandler {
     final static Logger LOGGER = LoggerFactory.getLogger(TCPServerHandler.class);
     private final Channel server;
 
-    public TCPServerHandler(EventLoopGroup bossGroup, EventLoopGroup workerGroup, ThrowableNioEventLoopGroup eventExecutor, Cluster cluster, InetSocketAddress serverAddress) throws InterruptedException {
+    public TCPServerHandler(EventLoopGroup bossGroup, EventLoopGroup workerGroup, ThrowableNioEventLoopGroup eventExecutor, List<Service> services, InetSocketAddress serverAddress) throws InterruptedException {
         ChannelFuture bind = new ServerBootstrap()
                 .childOption(ChannelOption.ALLOCATOR, PooledByteBufAllocator.DEFAULT)
                 .group(bossGroup, workerGroup)
@@ -44,7 +45,7 @@ public class TCPServerHandler {
                         p.addLast("packetDecoder", new PacketDecoder());
                         p.addLast("frameEncoder", new LengthFieldPrepender(Integer.BYTES));
                         p.addLast("packetEncoder", new PacketEncoder());
-                        p.addLast(new ServerChannelAdapter(cluster, eventExecutor));
+                        p.addLast(new ServerChannelAdapter(services, eventExecutor));
                     }
                 }).bind(serverAddress);
 

@@ -18,12 +18,14 @@ import java.util.function.Supplier;
 import static org.rakam.kume.util.ConsistentHashRing.hash;
 
 public class RingMap<K, V> extends AbstractRingMap<RingMap, Map, K, V> {
-    public RingMap(ServiceContext<RingMap> serviceContext, Supplier<Map> mapSupplier, MapMergePolicy<V> mergePolicy, int replicationFactor) {
-        super(serviceContext, mapSupplier, mergePolicy, replicationFactor);
+    private final static int DEFAULT_BUCKET_COUNT = 8;
+
+    public RingMap(ServiceContext<RingMap> serviceContext, Supplier<Map> mapSupplier, MapMergePolicy<V> mergePolicy, int bucketCount, int replicationFactor) {
+        super(serviceContext, mapSupplier, mergePolicy, bucketCount, replicationFactor);
     }
 
     public RingMap(ServiceContext<RingMap> serviceContext, MapMergePolicy<V> mergePolicy, int replicationFactor) {
-        super(serviceContext, ConcurrentHashMap::new, mergePolicy, replicationFactor);
+        super(serviceContext, ConcurrentHashMap::new, mergePolicy, DEFAULT_BUCKET_COUNT, replicationFactor);
     }
 
     public CompletableFuture<V> merge(K key, V value, BiFunction<? super V, ? super V, ? extends V> remappingFunction) {
@@ -39,7 +41,7 @@ public class RingMap<K, V> extends AbstractRingMap<RingMap, Map, K, V> {
     }
 
     protected V mergeLocal(K key, V value, BiFunction<? super V, ? super V, ? extends V> remappingFunction) {
-        Map<K, V> partition = getPartition(getRing().findBucketId(key));
+        Map<K, V> partition = getBucket(getRing().findBucketId(key));
         V oldValue = partition.get(key);
         V newValue = (oldValue == null) ? value : remappingFunction.apply(oldValue, value);
         if (newValue == null) {

@@ -1,10 +1,9 @@
 package org.rakam.kume;
 
-import io.netty.channel.Channel;
-import org.rakam.kume.transport.Operation;
 import org.rakam.kume.transport.OperationContext;
 import org.rakam.kume.transport.Request;
 import org.rakam.kume.util.FutureUtil;
+import org.rakam.kume.transport.Operation;
 import org.rakam.kume.util.Tuple;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -36,9 +35,9 @@ public class ClusterCheckAndMergeOperation implements Operation<InternalService>
 
         LOGGER.trace("got cluster check and merge request from a server who is not in this cluster");
 
-        Channel channel;
+        MemberChannel channel;
         try {
-            channel = cluster.connectServer(ctx.getSender().getAddress());
+            channel = cluster.getTransport().connect(ctx.getSender());
         } catch (InterruptedException e) {
             LOGGER.trace("a server send me join request from udp but i can't connect him. ignoring");
             return;
@@ -78,9 +77,9 @@ public class ClusterCheckAndMergeOperation implements Operation<InternalService>
             synchronized (cluster) {
                 LOGGER.trace("they must join me, my cluster is bigger than theirs");
                 for (Member otherMember : otherMembers) {
-                    Channel memberChannel;
+                    MemberChannel memberChannel;
                     try {
-                        memberChannel = cluster.connectServer(otherMember.getAddress());
+                        memberChannel = cluster.getTransport().connect(otherMember);
                     } catch (InterruptedException e) {
                         otherMembers.remove(otherMember);
                         continue;
@@ -129,7 +128,7 @@ public class ClusterCheckAndMergeOperation implements Operation<InternalService>
         @Override
         public void run(InternalService service, OperationContext<Void> ctx) {
             LOGGER.trace("someone wants me in his cluster, i will join her party.");
-            service.cluster.changeCluster(members, masterNode, false);
+//            service.cluster.changeCluster(members, masterNode, false);
             ctx.reply(null);
         }
     }
@@ -144,11 +143,11 @@ public class ClusterCheckAndMergeOperation implements Operation<InternalService>
         @Override
         public void run(InternalService service, OperationContext<Boolean> ctx) {
             LOGGER.trace("there are new members in the cluster. welcoming them.");
-            if(members.size() > 1)
-                service.cluster.addMembersInternal(members);
-            else
-            if(members.size() == 1)
-                service.cluster.addMemberInternal(members.iterator().next());
+//            if(members.size() > 1)
+//                service.cluster.getTransport().aad(members);
+//            else
+//            if(members.size() == 1)
+//                service.cluster.addMemberInternal(members.iterator().next());
 
             ctx.reply(null);
         }

@@ -13,10 +13,14 @@
  */
 package org.rakam.kume;
 
+import org.rakam.kume.service.Service;
+import org.rakam.kume.util.ThrowableNioEventLoopGroup;
+
+import java.util.List;
+
 /**
- * Created by buremba <Burak Emre Kabakcı> on 19/09/15 05:46.
+ * Created by buremba <Burak Emre Kabakcı> on 22/09/15 20:34.
  */
-public interface JoinerService {
-    void onStart(ClusterMembership membership);
-    default void onClose(){}
+public interface TransportConstructor {
+    Transport newInstance(ThrowableNioEventLoopGroup requestExecutor, List<Service> services, Member localMember);
 }

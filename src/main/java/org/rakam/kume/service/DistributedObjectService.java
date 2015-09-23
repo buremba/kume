@@ -134,11 +134,6 @@ public abstract class DistributedObjectService<C extends DistributedObjectServic
         }
     }
 
-    @Override
-    public void clusterChanged() {
-
-    }
-
     public abstract void setLocal(T val);
 
     protected abstract boolean mergeIn(T val);

@@ -1,6 +1,7 @@
 package org.rakam.kume.service.ringmap;
 
 import org.rakam.kume.Cluster;
+import org.rakam.kume.KryoSerializable;
 import org.rakam.kume.Member;
 import org.rakam.kume.MembershipListener;
 import org.rakam.kume.MigrationListener;
@@ -44,17 +45,18 @@ public abstract class AbstractRingMap<C extends AbstractRingMap, M extends Map, 
     protected int[] bucketIds;
     private ConsistentHashRing ring;
     private static Random random = new Random();
-    int bucketPerNode = 8;
+    private final int bucketCount;
 
     protected final Member localMember;
     private LinkedList<MigrationListener> migrationListeners = new LinkedList<>();
     Map<ConsistentHashRing.TokenRange, Map<K, V>> dataWaitingForMigration = new HashMap<>();
 
-    public AbstractRingMap(ServiceContext<C> serviceContext, Supplier<M> mapSupplier, MapMergePolicy<V> mergePolicy, int replicationFactor) {
+    public AbstractRingMap(ServiceContext<C> serviceContext, Supplier<M> mapSupplier, MapMergePolicy<V> mergePolicy, int bucketCount, int replicationFactor) {
         super(serviceContext);
         this.mergePolicy = mergePolicy;
         this.replicationFactor = replicationFactor;
         this.mapSupplier = mapSupplier;
+        this.bucketCount = bucketCount;
 
         Cluster cluster = getContext().getCluster();
         cluster.addMembershipListener(this);
@@ -62,7 +64,7 @@ public abstract class AbstractRingMap<C extends AbstractRingMap, M extends Map, 
 
         // if we're the master node and initializing the service, then it's a new service.
         if (cluster.getMaster().equals(localMember)) {
-            ConsistentHashRing newRing = new ConsistentHashRing(cluster.getMembers(), bucketPerNode, replicationFactor);
+            ConsistentHashRing newRing = new ConsistentHashRing(cluster.getMembers(), bucketCount, replicationFactor);
             ring = newRing;
             bucketIds = createBucketForRing(newRing);
             map = createEmptyMap(ring);
@@ -77,6 +79,10 @@ public abstract class AbstractRingMap<C extends AbstractRingMap, M extends Map, 
         return ring.getBuckets().entrySet().stream()
                 .filter(entry -> entry.getValue().contains(localMember))
                 .mapToInt(entry -> entry.getKey().id).sorted().toArray();
+    }
+
+    public int getBucketCount() {
+        return bucketCount;
     }
 
     protected M[] createEmptyMap(ConsistentHashRing ring) {
@@ -135,31 +141,31 @@ public abstract class AbstractRingMap<C extends AbstractRingMap, M extends Map, 
         changeRing(newRing).join();
     }
 
-    @Override
-    public void clusterChanged() {
-        ConsistentHashRing remoteRing = getContext()
-                .ask(getContext().getCluster().getMaster(), (service, ctx1) -> ctx1.reply(service.getRing()), ConsistentHashRing.class)
-                .join();
-
-        ConsistentHashRing newRing;
-        if (remoteRing.getMembers().contains(localMember)) {
-            ring = remoteRing.removeNode(localMember);
-            newRing = remoteRing;
-        } else {
-            ring = remoteRing;
-            newRing = remoteRing.addNode(localMember);
-        }
-        // we don't care about the old entries because the old ring doesn't have this local member so all operations will be remote.
-        // the old entries will be added to the cluster when the new ring is set.
-        changeRing(newRing).thenAccept(x -> {
-                    // maybe we can parallelize this operation in order to make it fast
-//                        Arrays.stream(oldBuckets).forEach(map -> map.forEach(this::put));
-                    Set<Member> members = ring.getMembers();
-                    LOGGER.info("Joined a cluster which has {} members {}.", members.size(), members);
-                }
-        ).join();
-
-    }
+//    @Override
+//    public void clusterChanged() {
+//        ConsistentHashRing remoteRing = getContext()
+//                .ask(getContext().getCluster().getMaster(), (service, ctx1) -> ctx1.reply(service.getRing()), ConsistentHashRing.class)
+//                .join();
+//
+//        ConsistentHashRing newRing;
+//        if (remoteRing.getMembers().contains(localMember)) {
+//            ring = remoteRing.removeNode(localMember);
+//            newRing = remoteRing;
+//        } else {
+//            ring = remoteRing;
+//            newRing = remoteRing.addNode(localMember);
+//        }
+//        // we don't care about the old entries because the old ring doesn't have this local member so all operations will be remote.
+//        // the old entries will be added to the cluster when the new ring is set.
+//        changeRing(newRing).thenAccept(x -> {
+//                    // maybe we can parallelize this operation in order to make it fast
+////                        Arrays.stream(oldBuckets).forEach(map -> map.forEach(this::put));
+//                    Set<Member> members = ring.getMembers();
+//                    LOGGER.info("Joined a cluster which has {} members {}.", members.size(), members);
+//                }
+//        ).join();
+//
+//    }
 
     private synchronized CompletableFuture<Void> setRing(ConsistentHashRing newRing) {
         M[] newMap = createEmptyMap(newRing);
@@ -277,7 +283,7 @@ public abstract class AbstractRingMap<C extends AbstractRingMap, M extends Map, 
                     // we don't remove the old entries because
                     // the new member will request the entries and remove them via migration request,
                     // so it allows us to avoid the requirement for consensus between nodes when changing ring.
-                    dataWaitingForMigration.put(range, getPartition(bucketId));
+                    dataWaitingForMigration.put(range, getBucket(bucketId));
                 }
             }
         }
@@ -293,6 +299,7 @@ public abstract class AbstractRingMap<C extends AbstractRingMap, M extends Map, 
                             migrations.size(), newRing.getBuckets().size(), localMember);
                     synchronized (getContext()) {
                         bucketIds = newBucketIds;
+                        System.out.println(newMap);
                         map = newMap;
                         ring = newRing;
                     }
@@ -301,7 +308,7 @@ public abstract class AbstractRingMap<C extends AbstractRingMap, M extends Map, 
                 });
     }
 
-    protected Map<K, V> getPartition(int bucketId) {
+    protected Map<K, V> getBucket(int bucketId) {
         return map[getPartitionId(bucketId)];
     }
 
@@ -370,7 +377,7 @@ public abstract class AbstractRingMap<C extends AbstractRingMap, M extends Map, 
 
         ArrayList<Member> members = bucket.members;
         if (members.contains(localMember)) {
-            return CompletableFuture.completedFuture(getPartition(bucketId).get(key));
+            return CompletableFuture.completedFuture(getBucket(bucketId).get(key));
         }
 
         return getContext().ask(members.get(random.nextInt(members.size())),
@@ -442,7 +449,7 @@ public abstract class AbstractRingMap<C extends AbstractRingMap, M extends Map, 
         ArrayList<Member> members = bucket.members;
 
         return getContext().ask(members.get(0), (service, ctx) -> {
-            Map<K, V> partition = service.getPartition(service.getRing().findBucketId(key));
+            Map<K, V> partition = service.getBucket(service.getRing().findBucketId(key));
             Modifiable<V> vModifiable = new Modifiable<>(partition.get(key));
             R apply = execute.apply(key, vModifiable);
             if(vModifiable.changed()) {
@@ -452,6 +459,7 @@ public abstract class AbstractRingMap<C extends AbstractRingMap, M extends Map, 
         });
     }
 
+    @KryoSerializable(id=10)
     public static class PutMapOperation implements Request<AbstractRingMap, Void> {
         Object key;
         Object value;
@@ -464,11 +472,12 @@ public abstract class AbstractRingMap<C extends AbstractRingMap, M extends Map, 
         @Override
         public void run(AbstractRingMap service, OperationContext ctx) {
             service.putLocal(key, value);
+            ctx.reply(null);
         }
     }
 
     protected void putLocal(K key, V value) {
-        Map<K, V> partition = getPartition(ring.findBucketId(key));
+        Map<K, V> partition = getBucket(ring.findBucketId(key));
         if (partition == null) {
             LOGGER.error("Discarded put request for key {} because node doesn't own that token.", key);
         } else {

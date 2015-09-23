@@ -6,9 +6,9 @@ import com.google.common.collect.ImmutableMap;
 import org.objenesis.strategy.StdInstantiatorStrategy;
 import org.rakam.kume.HeartbeatRequest;
 import org.rakam.kume.Member;
-import org.rakam.kume.transport.serialization.serializers.InetSocketAddressSerializer;
 import org.rakam.kume.transport.serialization.serializers.UnmodifiableCollectionsSerializer;
 import org.rakam.kume.util.ConsistentHashRing;
+import org.rakam.kume.transport.serialization.serializers.InetSocketAddressSerializer;
 
 import java.net.InetSocketAddress;
 import java.util.ArrayList;

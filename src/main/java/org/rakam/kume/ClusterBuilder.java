@@ -1,6 +1,7 @@
 package org.rakam.kume;
 
-import org.rakam.kume.service.ServiceInitializer;
+import com.google.common.collect.ImmutableList;
+import org.rakam.kume.service.ServiceListBuilder;
 import org.rakam.kume.util.NetworkUtil;
 
 import java.net.InetSocketAddress;
@@ -12,19 +13,15 @@ import java.util.Collection;
  */
 public class ClusterBuilder {
     private Collection<Member> members;
-    private ServiceInitializer services;
+    private ImmutableList<ServiceListBuilder.Constructor> services;
     private InetSocketAddress serverAddress;
     private boolean mustJoinCluster;
     private boolean client = false;
     private JoinerService joinerService;
+    private TransportConstructor transport;
 
     public ClusterBuilder members(Collection<Member> members) {
         this.members = members;
-        return this;
-    }
-
-    public ClusterBuilder joinStrategy(JoinerService joinerService) {
-        this.joinerService = joinerService;
         return this;
     }
 
@@ -32,11 +29,25 @@ public class ClusterBuilder {
         return members;
     }
 
+    public ClusterBuilder joinStrategy(JoinerService joinerService) {
+        this.joinerService = joinerService;
+        return this;
+    }
+
     public JoinerService joinStrategy() {
         return joinerService;
     }
 
-    public ClusterBuilder services(ServiceInitializer services) {
+    public ClusterBuilder transport(TransportConstructor transport) {
+        this.transport = transport;
+        return this;
+    }
+
+    public TransportConstructor transport() {
+        return transport;
+    }
+
+    public ClusterBuilder services(ImmutableList<ServiceListBuilder.Constructor> services) {
         this.services = services;
         return this;
     }
@@ -59,7 +70,7 @@ public class ClusterBuilder {
         return this;
     }
 
-    public ServiceInitializer services() {
+    public ImmutableList<ServiceListBuilder.Constructor> services() {
         return services;
     }
 
@@ -84,9 +95,12 @@ public class ClusterBuilder {
         if (serverAddress == null)
             serverAddress = new InetSocketAddress(NetworkUtil.getDefaultAddress(), 0);
 
-        if(services==null)
-            services = new ServiceInitializer();
+        if (transport == null)
+            transport = NettyTransport::new;
 
-        return new Cluster(members, services, serverAddress, joinerService, mustJoinCluster, client);
+        if(services==null)
+            services = ImmutableList.of();
+
+        return new Cluster(members, services, transport, serverAddress, joinerService, mustJoinCluster, client);
     }
 }
