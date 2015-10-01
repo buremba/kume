@@ -18,7 +18,8 @@ import org.rakam.kume.service.Service;
 /**
  * Created by buremba <Burak Emre Kabakcı> on 19/09/15 01:57.
  */
-public class InternalService extends Service {
+public class InternalService extends Service
+{
     protected final Cluster cluster;
     private final ServiceContext<InternalService> ctx;
 

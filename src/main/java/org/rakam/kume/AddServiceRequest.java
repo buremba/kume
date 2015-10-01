@@ -13,15 +13,13 @@
  */
 package org.rakam.kume;
 
+import org.rakam.kume.transport.OperationContext;
 import org.rakam.kume.service.Service;
 import org.rakam.kume.service.ServiceConstructor;
-import org.rakam.kume.transport.OperationContext;
 import org.rakam.kume.transport.Request;
 
-/**
- * Created by buremba <Burak Emre Kabakcı> on 19/09/15 01:51.
- */
-public class AddServiceRequest implements Request<InternalService, Boolean> {
+public class AddServiceRequest implements Request<InternalService, Boolean>
+{
     String finalName;
     String name;
     ServiceConstructor constructor;

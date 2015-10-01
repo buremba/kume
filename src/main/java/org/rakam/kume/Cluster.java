@@ -1,5 +1,7 @@
 package org.rakam.kume;
 
+import org.rakam.kume.service.ServiceListBuilder;
+import org.rakam.kume.util.Tuple;
 import com.google.common.base.Throwables;
 import com.google.common.cache.CacheBuilder;
 import com.google.common.collect.ImmutableList;
@@ -7,13 +9,11 @@ import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Iterators;
 import org.rakam.kume.service.Service;
-import org.rakam.kume.service.ServiceListBuilder;
 import org.rakam.kume.service.ServiceConstructor;
 import org.rakam.kume.transport.Packet;
 import org.rakam.kume.transport.LocalOperationContext;
 import org.rakam.kume.transport.Request;
 import org.rakam.kume.util.ThrowableNioEventLoopGroup;
-import org.rakam.kume.util.Tuple;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -88,9 +88,9 @@ public class Cluster {
 //                try {
 //                    server.waitForClose();
 //                } catch (InterruptedException e) {
-                    eventLoop.shutdownGracefully();
-                    requestExecutor.shutdownGracefully();
-                    transport.close();
+                eventLoop.shutdownGracefully();
+                requestExecutor.shutdownGracefully();
+                transport.close();
 //                }
             }
         });
@@ -108,7 +108,7 @@ public class Cluster {
         }
 
         internalBus = internalService.getContext();
-        IntStream.range(0, this.services.size())
+        IntStream.range(0, services.size())
                 .mapToObj(idx -> {
                     ServiceListBuilder.Constructor c = services.get(idx);
                     ServiceContext bus = new ServiceContext(this, idx + 1, c.name);
@@ -116,13 +116,13 @@ public class Cluster {
                 }).forEach(this.services::add);
 
         serviceNameMap = IntStream.range(0, services.size())
-                .mapToObj(idx -> new Tuple<>(services.get(idx).name, this.services.get(idx + 1)))
+                .mapToObj(idx -> new Tuple<>(services.get(idx).name, this.services.get(idx+1)))
                 .collect(Collectors.toConcurrentMap(x -> x._1, x -> x._2));
 
         scheduleClusteringTask();
         transport.initialize();
         this.joinerService = joinerService;
-        if(joinerService != null) {
+        if (joinerService != null) {
             joinerService.onStart(new ClusterMembership() {
                 @Override
                 public void addMember(Member member) {
@@ -177,7 +177,7 @@ public class Cluster {
             members.add(member);
             if (isMaster())
                 heartbeatMap.put(member, System.currentTimeMillis());
-            if(!member.isClient())
+            if (!member.isClient())
                 membershipListeners.forEach(x -> eventLoop.execute(() -> x.memberAdded(member)));
         }
     }
@@ -187,7 +187,7 @@ public class Cluster {
             LOGGER.info("Discovered another cluster of {} members", members.size());
 
             for (Member member : newMembers) {
-                if(member.equals(localMember))
+                if (member.equals(localMember))
                     continue;
                 // we may create the connection before executing this method.
                 if (!clusterConnection.containsKey(member)) {
@@ -335,7 +335,7 @@ public class Cluster {
             throw new IllegalArgumentException("there is already another service with same name");
 
         Service service = serviceNameMap.get(finalName);
-        if(service==null)
+        if (service == null)
             throw new IllegalStateException("service couldn't created");
         return (T) service;
     }
@@ -386,12 +386,12 @@ public class Cluster {
     }
 
     public void sendAllMembersInternal(Object bytes, boolean includeThisMember, int service) {
-        System.out.println(this + "internal -> "+members.size());
+        System.out.println(this + "internal -> " + members.size());
         members.stream().filter(member -> !member.equals(localMember) && !member.isClient())
                 .forEach(member -> sendInternal(clusterConnection.get(member), bytes, service));
 
         if (includeThisMember) {
-            if(localMember.isClient()) {
+            if (localMember.isClient()) {
                 throw new IllegalArgumentException();
             }
             Service s = services.get(service);

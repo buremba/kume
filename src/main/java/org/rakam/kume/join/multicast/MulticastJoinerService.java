@@ -13,17 +13,17 @@
  */
 package org.rakam.kume.join.multicast;
 
-import com.google.common.base.Throwables;
-import com.google.common.cache.CacheBuilder;
-import io.netty.channel.nio.NioEventLoopGroup;
-import org.rakam.kume.JoinerService;
 import org.rakam.kume.Cluster;
 import org.rakam.kume.ClusterCheckAndMergeOperation;
 import org.rakam.kume.ClusterMembership;
+import org.rakam.kume.JoinerService;
 import org.rakam.kume.Member;
-import org.rakam.kume.MemberState;
 import org.rakam.kume.ServiceContext;
 import org.rakam.kume.transport.Request;
+import com.google.common.base.Throwables;
+import com.google.common.cache.CacheBuilder;
+import io.netty.channel.nio.NioEventLoopGroup;
+import org.rakam.kume.MemberState;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -37,12 +37,11 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
-import static org.rakam.kume.MemberState.MASTER;
-
 /**
  * Created by buremba <Burak Emre Kabakcı> on 19/09/15 02:52.
  */
-public class MulticastJoinerService implements JoinerService {
+public class MulticastJoinerService implements JoinerService
+{
     final static Logger LOGGER = LoggerFactory.getLogger(Cluster.class);
 
     private final MulticastServerHandler multicastServer;
@@ -78,8 +77,8 @@ public class MulticastJoinerService implements JoinerService {
 
     private synchronized void changeMaster(Member masterMember) {
         master = masterMember;
-        memberState = masterMember.equals(localMember) ? MASTER : MemberState.FOLLOWER;
-        multicastServer.setJoinGroup(memberState == MASTER);
+        memberState = masterMember.equals(localMember) ? MemberState.MASTER : MemberState.FOLLOWER;
+        multicastServer.setJoinGroup(memberState == MemberState.MASTER);
     }
 
     public MemberState memberState() {

@@ -13,6 +13,10 @@
  */
 package org.rakam.kume;
 
+import org.rakam.kume.network.ClientChannelAdapter;
+import org.rakam.kume.network.TCPServerHandler;
+import org.rakam.kume.service.Service;
+import org.rakam.kume.transport.PacketDecoder;
 import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.RemovalCause;
@@ -30,11 +34,7 @@ import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
 import io.netty.handler.codec.LengthFieldBasedFrameDecoder;
 import io.netty.handler.codec.LengthFieldPrepender;
-import org.rakam.kume.network.ClientChannelAdapter;
-import org.rakam.kume.service.Service;
-import org.rakam.kume.network.TCPServerHandler;
 import org.rakam.kume.transport.Packet;
-import org.rakam.kume.transport.PacketDecoder;
 import org.rakam.kume.transport.PacketEncoder;
 import org.rakam.kume.util.ThrowableNioEventLoopGroup;
 import org.slf4j.Logger;
@@ -51,11 +51,8 @@ import java.util.concurrent.TimeoutException;
 public class NettyTransport implements Transport {
     private final static Logger LOGGER = LoggerFactory.getLogger(NettyTransport.class);
     private final Cache<Integer, CompletableFuture<Object>> messageHandlers = CacheBuilder.newBuilder()
-            .expireAfterWrite(105, TimeUnit.SECONDS)
-            .removalListener((RemovalNotification<Integer, CompletableFuture<Object>> notification) -> {
-                if (!notification.getCause().equals(RemovalCause.EXPLICIT))
-                    notification.getValue().completeExceptionally(new TimeoutException());
-            }).build();
+            .expireAfterWrite(200, TimeUnit.SECONDS)
+            .removalListener(this::removalListener).build();
 
     // IO thread for TCP and UDP connections
     final EventLoopGroup bossGroup = new NioEventLoopGroup(1);
@@ -71,6 +68,11 @@ public class NettyTransport implements Transport {
             throw new IllegalStateException("Failed to bind TCP " + localMember.getAddress());
         }
 
+    }
+
+    private void removalListener(RemovalNotification<Integer, CompletableFuture<Object>> notification) {
+        if (!notification.getCause().equals(RemovalCause.EXPLICIT))
+            notification.getValue().completeExceptionally(new TimeoutException());
     }
 
     @Override

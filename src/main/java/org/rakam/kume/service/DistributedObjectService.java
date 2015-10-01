@@ -1,13 +1,13 @@
 package org.rakam.kume.service;
 
 import org.rakam.kume.Cluster;
+import org.rakam.kume.transport.Operation;
+import org.rakam.kume.transport.OperationContext;
+import org.rakam.kume.util.ConsistentHashRing;
 import org.rakam.kume.Member;
 import org.rakam.kume.MembershipListener;
 import org.rakam.kume.ServiceContext;
-import org.rakam.kume.transport.Operation;
-import org.rakam.kume.transport.OperationContext;
 import org.rakam.kume.transport.Request;
-import org.rakam.kume.util.ConsistentHashRing;
 
 import java.util.Collections;
 import java.util.List;
@@ -22,7 +22,8 @@ import java.util.stream.Stream;
 /**
  * Created by buremba <Burak Emre Kabakcı> on 19/12/14 04:25.
  */
-public abstract class DistributedObjectService<C extends DistributedObjectService, T> extends Service implements MembershipListener {
+public abstract class DistributedObjectService<C extends DistributedObjectService, T> extends Service implements MembershipListener
+{
     final int replicationFactor;
     private final ServiceContext<C> ctx;
     private List<Member> ownedMembers;
@@ -138,7 +139,8 @@ public abstract class DistributedObjectService<C extends DistributedObjectServic
 
     protected abstract boolean mergeIn(T val);
 
-    private static class MergeRequest<C extends DistributedObjectService, T> implements Request<C, Boolean> {
+    private static class MergeRequest<C extends DistributedObjectService, T> implements Request<C, Boolean>
+    {
         private final T val;
 
         public MergeRequest(T val) {

@@ -1,7 +1,7 @@
 package org.rakam.kume.service;
 
-import org.rakam.kume.ServiceContext;
 import org.rakam.kume.transport.OperationContext;
+import org.rakam.kume.ServiceContext;
 
 import java.util.ArrayDeque;
 

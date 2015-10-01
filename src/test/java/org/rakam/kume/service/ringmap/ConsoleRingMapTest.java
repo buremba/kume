@@ -1,11 +1,12 @@
-package org.rakam.kume;
+package org.rakam.kume.service.ringmap;
 
-import com.google.common.collect.ImmutableList;
+import org.rakam.kume.Cluster;
+import org.rakam.kume.ClusterBuilder;
 import org.rakam.kume.service.ServiceListBuilder;
-import org.rakam.kume.service.ringmap.RingMap;
 import org.rakam.kume.service.crdt.counter.GCounterService;
-import org.rakam.kume.service.ringmap.RingMap;
 import org.rakam.kume.util.ConsistentHashRing;
+import com.google.common.collect.ImmutableList;
+import org.rakam.kume.Member;
 
 import java.util.ArrayList;
 import java.util.Collection;

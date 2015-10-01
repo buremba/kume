@@ -2,11 +2,11 @@ package org.rakam.kume.transport;
 
 import com.esotericsoftware.kryo.Kryo;
 import com.esotericsoftware.kryo.KryoException;
+import org.rakam.kume.ByteBufOutput;
+import org.rakam.kume.transport.serialization.KryoFactory;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.MessageToByteEncoder;
-import org.rakam.kume.ByteBufOutput;
-import org.rakam.kume.transport.serialization.KryoFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

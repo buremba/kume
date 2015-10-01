@@ -1,7 +1,7 @@
 package org.rakam.kume.service;
 
-import io.netty.util.concurrent.EventExecutor;
 import org.rakam.kume.transport.OperationContext;
+import io.netty.util.concurrent.EventExecutor;
 import org.rakam.kume.transport.Request;
 import org.rakam.kume.util.ThrowableNioEventLoopGroup;
 import org.slf4j.Logger;

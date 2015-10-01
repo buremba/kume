@@ -1,24 +1,23 @@
 package org.rakam.kume.service.ringmap;
 
-import org.rakam.kume.Member;
 import org.rakam.kume.transport.OperationContext;
-import org.rakam.kume.transport.Request;
 import org.rakam.kume.transport.serialization.Serializer;
 import org.rakam.kume.util.ConsistentHashRing;
+import org.rakam.kume.Member;
+import org.rakam.kume.transport.Request;
 
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
 
 import static java.util.Map.Entry;
-import static org.rakam.kume.util.ConsistentHashRing.TokenRange;
 import static org.rakam.kume.util.ConsistentHashRing.hash;
-import static org.rakam.kume.util.ConsistentHashRing.isTokenBetween;
 
 /**
 * Created by buremba <Burak Emre Kabakcı> on 17/12/14 00:58.
 */
-class ChangeRingRequest<K, V> implements Request<RingMap, Map<K, V>> {
+class ChangeRingRequest<K, V> implements Request<RingMap, Map<K, V>>
+{
     private final long queryStartToken;
     private final long queryEndToken;
     private ConsistentHashRing oldRing;
@@ -52,14 +51,14 @@ class ChangeRingRequest<K, V> implements Request<RingMap, Map<K, V>> {
                     long endToken = serviceRing.getBucket(bckId + 1).token-1;
                     long startToken = serviceRing.getBucket(bckId).token;
 
-                    boolean partitionBetweenToken = isTokenBetween(startToken, queryStartToken, queryStartToken);
-                    partitionBetweenToken &= isTokenBetween(endToken, queryStartToken, queryStartToken);
+                    boolean partitionBetweenToken = ConsistentHashRing.isTokenBetween(startToken, queryStartToken, queryStartToken);
+                    partitionBetweenToken &= ConsistentHashRing.isTokenBetween(endToken, queryStartToken, queryStartToken);
 
                     if (partitionBetweenToken) {
                         moveEntries.putAll(partition);
                     } else {
                         partition.forEach((key, value) -> {
-                            if (isTokenBetween(hash(key), queryStartToken, queryEndToken)) {
+                            if (ConsistentHashRing.isTokenBetween(ConsistentHashRing.hash(key), queryStartToken, queryEndToken)) {
                                 moveEntries.put(key, value);
                             }
                         });
@@ -68,14 +67,14 @@ class ChangeRingRequest<K, V> implements Request<RingMap, Map<K, V>> {
                     // it seems partition table is changed (most probably updated before this request is processed)
                     // so the old items must be in dataWaitingForMigration.
 
-                    Iterator<Entry<TokenRange, Map>> it = service.dataWaitingForMigration.entrySet().iterator();
+                    Iterator<Entry<ConsistentHashRing.TokenRange, Map>> it = service.dataWaitingForMigration.entrySet().iterator();
                     while (it.hasNext()) {
-                        Entry<TokenRange, Map> next = it.next();
-                        TokenRange token = next.getKey();
+                        Entry<ConsistentHashRing.TokenRange, Map> next = it.next();
+                        ConsistentHashRing.TokenRange token = next.getKey();
                         Map map = next.getValue();
 
-                        boolean startTokenIn = isTokenBetween(token.start, queryStartToken, queryEndToken);
-                        boolean endTokenIn = isTokenBetween(token.end, queryStartToken, queryEndToken);
+                        boolean startTokenIn = ConsistentHashRing.isTokenBetween(token.start, queryStartToken, queryEndToken);
+                        boolean endTokenIn = ConsistentHashRing.isTokenBetween(token.end, queryStartToken, queryEndToken);
 
                         if (startTokenIn && endTokenIn) {
                             moveEntries.putAll(map);
@@ -84,8 +83,8 @@ class ChangeRingRequest<K, V> implements Request<RingMap, Map<K, V>> {
                             Iterator<Entry<K, V>> iterator = map.entrySet().iterator();
                             while (iterator.hasNext()) {
                                 Entry<K, V> n = iterator.next();
-                                long entryToken = hash(Serializer.toByteArray(n.getKey()));
-                                if (isTokenBetween(entryToken, queryStartToken, queryEndToken)) {
+                                long entryToken = ConsistentHashRing.hash(Serializer.toByteArray(n.getKey()));
+                                if (ConsistentHashRing.isTokenBetween(entryToken, queryStartToken, queryEndToken)) {
                                     moveEntries.put(n.getKey(), n.getValue());
                                     iterator.remove();
                                 }

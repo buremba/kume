@@ -1,5 +1,7 @@
 package org.rakam.kume.network;
 
+import org.rakam.kume.service.Service;
+import org.rakam.kume.transport.PacketDecoder;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.buffer.PooledByteBufAllocator;
 import io.netty.channel.Channel;
@@ -12,8 +14,6 @@ import io.netty.channel.socket.SocketChannel;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.handler.codec.LengthFieldBasedFrameDecoder;
 import io.netty.handler.codec.LengthFieldPrepender;
-import org.rakam.kume.service.Service;
-import org.rakam.kume.transport.PacketDecoder;
 import org.rakam.kume.transport.PacketEncoder;
 import org.rakam.kume.util.ThrowableNioEventLoopGroup;
 import org.slf4j.Logger;
@@ -54,7 +54,7 @@ public class TCPServerHandler {
                     if (!future.isSuccess()) {
                         LOGGER.error("Failed to bind {}", bind.channel().localAddress());
                     }
-                }).channel();
+                }).awaitUninterruptibly().channel();
     }
 
     public ChannelFuture waitForClose() throws InterruptedException {

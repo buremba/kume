@@ -13,16 +13,17 @@
  */
 package org.rakam.kume;
 
-import com.google.auto.service.AutoService;
-import org.rakam.kume.transport.OperationContext;
 import org.rakam.kume.transport.Operation;
+import org.rakam.kume.transport.OperationContext;
+import com.google.auto.service.AutoService;
 
 /**
  * Created by buremba <Burak Emre Kabakcı> on 19/09/15 01:55.
  */
 @KryoSerializable(id = 3)
 @AutoService(KryoSerializable.class)
-public class HeartbeatRequest implements Operation<InternalService> {
+public class HeartbeatRequest implements Operation<InternalService>
+{
     Member sender;
 
     public HeartbeatRequest(Member sender) {

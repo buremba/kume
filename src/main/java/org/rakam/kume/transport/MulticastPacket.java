@@ -6,7 +6,6 @@ import com.esotericsoftware.kryo.io.Input;
 import com.esotericsoftware.kryo.io.Output;
 import org.rakam.kume.Member;
 
-
 /**
  * Created by buremba <Burak Emre Kabakcı> on 25/12/14 20:16.
  */

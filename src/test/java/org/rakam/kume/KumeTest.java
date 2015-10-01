@@ -2,8 +2,8 @@ package org.rakam.kume;
 
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
-import com.google.common.collect.ImmutableList;
 import org.rakam.kume.service.ServiceListBuilder;
+import com.google.common.collect.ImmutableList;
 import org.slf4j.LoggerFactory;
 
 import java.util.List;

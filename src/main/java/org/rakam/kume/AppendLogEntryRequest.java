@@ -10,9 +10,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 
-/**
-* Created by buremba <Burak Emre Kabakcı> on 03/01/15 19:55.
-*/
 public class AppendLogEntryRequest<R> implements Request<InternalService, Boolean> {
     private final Request request;
     private final int serviceId;

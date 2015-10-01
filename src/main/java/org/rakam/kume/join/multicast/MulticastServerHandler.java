@@ -1,5 +1,10 @@
 package org.rakam.kume.join.multicast;
 
+import org.rakam.kume.Cluster;
+import org.rakam.kume.Member;
+import org.rakam.kume.transport.MulticastPacket;
+import org.rakam.kume.transport.Operation;
+import org.rakam.kume.transport.serialization.Serializer;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
@@ -11,11 +16,6 @@ import io.netty.channel.socket.InternetProtocolFamily;
 import io.netty.channel.socket.nio.NioDatagramChannel;
 import io.netty.util.NetUtil;
 import org.rakam.kume.InternalService;
-import org.rakam.kume.Cluster;
-import org.rakam.kume.Member;
-import org.rakam.kume.transport.Operation;
-import org.rakam.kume.transport.MulticastPacket;
-import org.rakam.kume.transport.serialization.Serializer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

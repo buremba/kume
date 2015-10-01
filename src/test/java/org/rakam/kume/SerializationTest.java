@@ -1,12 +1,12 @@
 package org.rakam.kume;
 
 import com.esotericsoftware.kryo.Kryo;
+import org.rakam.kume.transport.serialization.KryoFactory;
 import com.google.common.reflect.ClassPath;
 import com.pholser.junit.quickcheck.ForAll;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import org.objenesis.strategy.StdInstantiatorStrategy;
-import org.rakam.kume.transport.serialization.KryoFactory;
 import org.rakam.kume.transport.Request;
 
 import java.io.IOException;

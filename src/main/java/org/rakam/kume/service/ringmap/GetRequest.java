@@ -6,7 +6,8 @@ import org.rakam.kume.transport.Request;
 /**
 * Created by buremba <Burak Emre Kabakcı> on 19/12/14 04:10.
 */
-class GetRequest<K, V> implements Request<AbstractRingMap,V> {
+class GetRequest<K, V> implements Request<AbstractRingMap,V>
+{
     private final K key;
     private AbstractRingMap ringMap;
 

@@ -1,8 +1,8 @@
 package org.rakam.kume;
 
-import com.google.common.collect.ImmutableList;
 import org.rakam.kume.service.ServiceListBuilder;
 import org.rakam.kume.util.NetworkUtil;
+import com.google.common.collect.ImmutableList;
 
 import java.net.InetSocketAddress;
 import java.util.ArrayList;

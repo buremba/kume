@@ -13,9 +13,9 @@
  */
 package org.rakam.kume;
 
-import io.netty.channel.nio.NioEventLoopGroup;
 import org.rakam.kume.service.Service;
 import org.rakam.kume.transport.Request;
+import io.netty.channel.nio.NioEventLoopGroup;
 
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;

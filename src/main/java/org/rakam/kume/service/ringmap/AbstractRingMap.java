@@ -2,14 +2,14 @@ package org.rakam.kume.service.ringmap;
 
 import org.rakam.kume.Cluster;
 import org.rakam.kume.KryoSerializable;
-import org.rakam.kume.Member;
-import org.rakam.kume.MembershipListener;
 import org.rakam.kume.MigrationListener;
-import org.rakam.kume.ServiceContext;
 import org.rakam.kume.service.PausableService;
 import org.rakam.kume.transport.OperationContext;
 import org.rakam.kume.transport.Request;
 import org.rakam.kume.util.ConsistentHashRing;
+import org.rakam.kume.Member;
+import org.rakam.kume.MembershipListener;
+import org.rakam.kume.ServiceContext;
 import org.rakam.kume.util.FutureUtil.MultipleFutureListener;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -35,7 +35,8 @@ import static org.rakam.kume.util.ConsistentHashRing.hash;
 /**
  * Created by buremba <Burak Emre Kabakcı> on 02/01/15 18:45.
  */
-public abstract class AbstractRingMap<C extends AbstractRingMap, M extends Map, K, V> extends PausableService<C> implements MembershipListener {
+public abstract class AbstractRingMap<C extends AbstractRingMap, M extends Map, K, V> extends PausableService<C>
+        implements MembershipListener {
     final static Logger LOGGER = LoggerFactory.getLogger(AbstractRingMap.class);
     private final MapMergePolicy<V> mergePolicy;
     private final int replicationFactor;
@@ -264,7 +265,7 @@ public abstract class AbstractRingMap<C extends AbstractRingMap, M extends Map, 
                                     newMap[Arrays.binarySearch(newBucketIds, startBucket)].putAll(data);
                                 } else {
                                     data.forEach((key, value) -> {
-                                        int i = Arrays.binarySearch(newBucketIds, newRing.findBucketIdFromToken(hash(key)));
+                                        int i = Arrays.binarySearch(newBucketIds, newRing.findBucketIdFromToken(ConsistentHashRing.hash(key)));
                                         if (i >= 0) {
                                             Map<K, V> partition = newMap[i];
                                             partition.put(key, value);
@@ -341,7 +342,7 @@ public abstract class AbstractRingMap<C extends AbstractRingMap, M extends Map, 
         Map<Member, List<Map.Entry>> m = new HashMap<>();
 
         for (Map.Entry entry : fromMap.entrySet()) {
-            for (Member member : ring.findBucketFromToken(hash(entry.getKey())).members) {
+            for (Member member : ring.findBucketFromToken(ConsistentHashRing.hash(entry.getKey())).members) {
                 m.getOrDefault(member, new ArrayList()).add(entry);
             }
         }
@@ -355,7 +356,7 @@ public abstract class AbstractRingMap<C extends AbstractRingMap, M extends Map, 
     }
 
     public CompletableFuture<Void> put(K key, V val) {
-        int bucketId = ring.findBucketIdFromToken(hash(key));
+        int bucketId = ring.findBucketIdFromToken(ConsistentHashRing.hash(key));
         ConsistentHashRing.Bucket bucket = ring.getBucket(bucketId);
 
         MultipleFutureListener listener = new MultipleFutureListener((bucket.members.size() / 2) + 1);

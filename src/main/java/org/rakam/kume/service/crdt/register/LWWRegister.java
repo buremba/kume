@@ -1,7 +1,7 @@
 package org.rakam.kume.service.crdt.register;
 
-import org.rakam.kume.ServiceContext;
 import org.rakam.kume.service.DistributedObjectServiceAdapter;
+import org.rakam.kume.ServiceContext;
 
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Stream;
@@ -9,7 +9,8 @@ import java.util.stream.Stream;
 /**
  * Created by buremba <Burak Emre Kabakcı> on 30/12/14 19:33.
  */
-public class LWWRegister<T> extends DistributedObjectServiceAdapter<LWWRegister<T>, LWWRegister.ObjectTimestampHolder<T>> {
+public class LWWRegister<T> extends DistributedObjectServiceAdapter<LWWRegister<T>, LWWRegister.ObjectTimestampHolder<T>>
+{
 
     public LWWRegister(ServiceContext clusterContext, T value, int replicationFactor) {
         super(clusterContext, new LWWRegister.ObjectTimestampHolder<>(value), replicationFactor);

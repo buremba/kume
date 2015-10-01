@@ -1,11 +1,11 @@
 package org.rakam.kume.service.ringmap;
 
+import org.rakam.kume.transport.OperationContext;
+import org.rakam.kume.util.ConsistentHashRing;
 import io.netty.util.concurrent.EventExecutor;
 import org.rakam.kume.Member;
 import org.rakam.kume.ServiceContext;
-import org.rakam.kume.transport.OperationContext;
 import org.rakam.kume.transport.Request;
-import org.rakam.kume.util.ConsistentHashRing;
 import org.rakam.kume.util.FutureUtil;
 import org.rakam.kume.util.ThrowableNioEventLoopGroup;
 
@@ -29,7 +29,7 @@ public class RingMap<K, V> extends AbstractRingMap<RingMap, Map, K, V> {
     }
 
     public CompletableFuture<V> merge(K key, V value, BiFunction<? super V, ? super V, ? extends V> remappingFunction) {
-        int bucketId = getRing().findBucketIdFromToken(hash(key));
+        int bucketId = getRing().findBucketIdFromToken(ConsistentHashRing.hash(key));
         ConsistentHashRing.Bucket bucket = getRing().getBucket(bucketId);
 
         FutureUtil.MultipleFutureListener listener = new FutureUtil.MultipleFutureListener((bucket.members.size() / 2) + 1);
