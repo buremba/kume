@@ -24,9 +24,7 @@ import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
-/**
- * Created by buremba <Burak Emre Kabakcı> on 11/11/14 17:17.
- */
+
 public class ConsistentHashRing {
     private final int bucketPerNode;
     private final Bucket[] buckets;

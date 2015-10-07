@@ -10,9 +10,7 @@ import org.slf4j.LoggerFactory;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentMap;
 
-/**
- * Created by buremba <Burak Emre Kabakcı> on 15/11/14 15:45.
- */
+
 public class ClientChannelAdapter extends ChannelInboundHandlerAdapter {
     final static Logger LOGGER = LoggerFactory.getLogger(ClientChannelAdapter.class);
 

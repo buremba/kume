@@ -5,9 +5,7 @@ import org.rakam.kume.Member;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-/**
- * Created by buremba <Burak Emre Kabakcı> on 24/11/14 19:06.
- */
+
 public class RemoteOperationContext implements OperationContext {
     final static Logger LOGGER = LoggerFactory.getLogger(RemoteOperationContext.class);
 

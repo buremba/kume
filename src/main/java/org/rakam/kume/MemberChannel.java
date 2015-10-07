@@ -17,9 +17,7 @@ import org.rakam.kume.transport.Packet;
 
 import java.util.concurrent.CompletableFuture;
 
-/**
- * Created by buremba <Burak Emre Kabakcı> on 22/09/15 20:13.
- */
+
 public interface MemberChannel {
     CompletableFuture ask(Packet message);
     void send(Packet message);

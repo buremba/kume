@@ -45,9 +45,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
-/**
- * Created by buremba <Burak Emre Kabakcı> on 22/09/15 20:21.
- */
+
 public class NettyTransport implements Transport {
     private final static Logger LOGGER = LoggerFactory.getLogger(NettyTransport.class);
     private final Cache<Integer, CompletableFuture<Object>> messageHandlers = CacheBuilder.newBuilder()

@@ -23,9 +23,7 @@ import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import java.util.List;
 
-/**
- * Created by buremba <Burak Emre Kabakcı> on 03/01/15 15:43.
- */
+
 public class TCPServerHandler {
     final static Logger LOGGER = LoggerFactory.getLogger(TCPServerHandler.class);
     private final Channel server;

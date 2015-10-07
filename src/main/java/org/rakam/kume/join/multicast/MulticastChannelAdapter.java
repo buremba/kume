@@ -16,9 +16,6 @@ import org.slf4j.LoggerFactory;
 
 import java.net.ConnectException;
 
-/**
-* Created by buremba <Burak Emre Kabakcı> on 23/11/14 17:38.
-*/
 public class MulticastChannelAdapter extends ChannelInboundHandlerAdapter {
     final static Logger LOGGER = LoggerFactory.getLogger(MulticastChannelAdapter.class);
 

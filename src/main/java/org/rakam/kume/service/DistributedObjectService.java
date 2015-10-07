@@ -19,9 +19,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Stream;
 
-/**
- * Created by buremba <Burak Emre Kabakcı> on 19/12/14 04:25.
- */
+
 public abstract class DistributedObjectService<C extends DistributedObjectService, T> extends Service implements MembershipListener
 {
     final int replicationFactor;

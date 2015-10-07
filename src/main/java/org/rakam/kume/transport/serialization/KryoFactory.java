@@ -16,9 +16,7 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.Map;
 
-/**
- * Created by buremba <Burak Emre Kabakcı> on 11/12/14 22:57.
- */
+
 public class KryoFactory {
     static {
 //        Log.TRACE = true;

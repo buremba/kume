@@ -13,9 +13,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.List;
 
-/**
- * Created by buremba <Burak Emre Kabakcı> on 15/11/14 02:34.
- */
+
 public class ServerChannelAdapter extends ChannelInboundHandlerAdapter {
     final static Logger LOGGER = LoggerFactory.getLogger(PacketDecoder.class);
 

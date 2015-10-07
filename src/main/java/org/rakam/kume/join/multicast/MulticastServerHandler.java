@@ -22,9 +22,7 @@ import org.slf4j.LoggerFactory;
 import java.net.InetSocketAddress;
 import java.net.NetworkInterface;
 
-/**
- * Created by buremba <Burak Emre Kabakcı> on 25/12/14 19:44.
- */
+
 public class MulticastServerHandler {
     final static Logger LOGGER = LoggerFactory.getLogger(MulticastServerHandler.class);
 

@@ -3,9 +3,7 @@ package org.rakam.kume.util;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Stream;
 
-/**
- * Created by buremba <Burak Emre Kabakcı> on 22/12/14 01:38.
- */
+
 public class FutureUtil {
     public static class MultipleFutureListener<V> {
         final int expected;

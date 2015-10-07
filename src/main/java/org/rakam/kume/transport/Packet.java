@@ -1,8 +1,5 @@
 package org.rakam.kume.transport;
 
-/**
-* Created by buremba <Burak Emre Kabakcı> on 15/11/14 14:19.
-*/
 public class Packet {
     public final int sequence;
     public Object data;

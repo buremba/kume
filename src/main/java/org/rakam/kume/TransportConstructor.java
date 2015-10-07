@@ -18,9 +18,7 @@ import org.rakam.kume.util.ThrowableNioEventLoopGroup;
 
 import java.util.List;
 
-/**
- * Created by buremba <Burak Emre Kabakcı> on 22/09/15 20:34.
- */
+
 public interface TransportConstructor {
     Transport newInstance(ThrowableNioEventLoopGroup requestExecutor, List<Service> services, Member localMember);
 }

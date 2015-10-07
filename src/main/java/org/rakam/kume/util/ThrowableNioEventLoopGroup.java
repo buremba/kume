@@ -6,9 +6,7 @@ import io.netty.util.concurrent.EventExecutor;
 
 import java.lang.Thread.UncaughtExceptionHandler;
 
-/**
- * Created by buremba <Burak Emre Kabakcı> on 30/12/14 05:59.
- */
+
 public class ThrowableNioEventLoopGroup extends NioEventLoopGroup {
     EventExecutor[] children;
 

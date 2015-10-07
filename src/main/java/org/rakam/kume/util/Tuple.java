@@ -1,8 +1,6 @@
 package org.rakam.kume.util;
 
-/**
- * Created by buremba <Burak Emre Kabakcı> on 13/12/14 14:49.
- */
+
 public class Tuple<A, B> {
     final public A _1;
 

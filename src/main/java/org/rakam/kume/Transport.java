@@ -12,9 +12,7 @@ package org.rakam.kume;/*
  * limitations under the License.
  */
 
-/**
- * Created by buremba <Burak Emre Kabakcı> on 22/09/15 20:20.
- */
+
 public interface Transport {
     MemberChannel connect(Member member) throws InterruptedException;
     void close();

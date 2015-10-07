@@ -6,9 +6,7 @@ import com.esotericsoftware.kryo.io.Output;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 
-/**
- * Created by buremba <Burak Emre Kabakcı> on 19/11/14 00:51.
- */
+
 public class Serializer {
 
     public static ByteBuf toByteBuf(Object obj) {

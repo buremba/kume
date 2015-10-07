@@ -7,9 +7,7 @@ import org.rakam.kume.util.ThrowableNioEventLoopGroup;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-/**
- * Created by buremba <Burak Emre Kabakcı> on 17/11/14 19:04.
- */
+
 public abstract class Service {
     final static Logger LOGGER = LoggerFactory.getLogger(Service.class);
 

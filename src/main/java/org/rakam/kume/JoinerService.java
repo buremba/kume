@@ -13,9 +13,7 @@
  */
 package org.rakam.kume;
 
-/**
- * Created by buremba <Burak Emre Kabakcı> on 19/09/15 05:46.
- */
+
 public interface JoinerService {
     void onStart(ClusterMembership membership);
     default void onClose(){}

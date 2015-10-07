@@ -27,9 +27,7 @@ import static java.util.stream.IntStream.range;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
-/**
- * Created by buremba <Burak Emre Kabakcı> on 23/11/14 19:07.
- */
+
 public class RingMapTest extends KumeTest {
 
     @Test

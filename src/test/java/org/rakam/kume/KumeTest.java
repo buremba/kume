@@ -12,9 +12,7 @@ import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
-/**
- * Created by buremba <Burak Emre Kabakcı> on 25/11/14 18:51.
- */
+
 public class KumeTest {
 
     public static Stream<ClusterBuilder> createFixedFakeCluster(IntStream intStream, ImmutableList<ServiceListBuilder.Constructor> services) {

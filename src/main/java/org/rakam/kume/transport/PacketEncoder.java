@@ -10,9 +10,7 @@ import io.netty.handler.codec.MessageToByteEncoder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-/**
- * Created by buremba <Burak Emre Kabakcı> on 17/11/14 13:45.
- */
+
 public class PacketEncoder extends MessageToByteEncoder<Packet> {
     private final Kryo kryo;
     final static Logger LOGGER = LoggerFactory.getLogger(PacketEncoder.class);

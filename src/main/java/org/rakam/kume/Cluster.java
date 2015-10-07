@@ -41,9 +41,7 @@ import java.util.stream.IntStream;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
 
-/**
- * Created by buremba <Burak Emre Kabakcı> on 15/11/14 21:41.
- */
+
 public class Cluster {
     final static Logger LOGGER = LoggerFactory.getLogger(Cluster.class);
 

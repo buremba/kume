@@ -20,9 +20,7 @@ import io.netty.channel.nio.NioEventLoopGroup;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
-/**
- * Created by buremba <Burak Emre Kabakcı> on 19/09/15 01:55.
- */
+
 public class ServiceContext<T extends Service> {
     private final String serviceName;
     private final int service;

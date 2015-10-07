@@ -7,9 +7,7 @@ import io.netty.buffer.ByteBuf;
 import java.io.IOException;
 import java.io.InputStream;
 
-/**
- * Created by buremba <Burak Emre Kabakcı> on 06/01/15 06:01.
- */
+
 public class ByteBufInput extends Input {
     private final ByteBuf byteBuf;
 

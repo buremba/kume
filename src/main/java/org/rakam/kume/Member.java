@@ -6,9 +6,7 @@ import org.rakam.kume.transport.serialization.serializers.InetSocketAddressSeria
 
 import java.net.InetSocketAddress;
 
-/**
- * Created by buremba <Burak Emre Kabakcı> on 16/11/14 16:37.
- */
+
 public class Member {
     @NotNull
     @FieldSerializer.Bind(InetSocketAddressSerializer.class)

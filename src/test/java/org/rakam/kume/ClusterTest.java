@@ -12,9 +12,7 @@ import java.util.concurrent.CountDownLatch;
 
 import static com.google.common.collect.ImmutableList.of;
 
-/**
- * Created by buremba <Burak Emre Kabakcı> on 23/11/14 19:34.
- */
+
 public class ClusterTest extends KumeTest {
 
     @Test

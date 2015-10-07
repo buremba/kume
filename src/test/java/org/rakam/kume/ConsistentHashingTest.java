@@ -14,9 +14,7 @@ import java.util.stream.Collectors;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
-/**
- * Created by buremba <Burak Emre Kabakcı> on 06/12/14 03:13.
- */
+
 public class ConsistentHashingTest {
     /*
      We need an extensive testing framework in order to efficiently test ConsistentHashRing

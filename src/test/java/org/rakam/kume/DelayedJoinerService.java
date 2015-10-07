@@ -21,9 +21,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
-/**
- * Created by buremba <Burak Emre Kabakcı> on 22/09/15 23:12.
- */
+
 class DelayedJoinerService implements JoinerService {
     private final Duration duration;
     private final ArrayBlockingQueue<Member> members;

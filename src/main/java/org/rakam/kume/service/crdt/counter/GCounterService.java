@@ -5,9 +5,7 @@ import org.rakam.kume.service.DistributedObjectServiceAdapter;
 
 import static com.google.common.base.Preconditions.checkArgument;
 
-/**
- * Created by buremba <Burak Emre Kabakcı> on 30/12/14 17:56.
- */
+
 public class GCounterService extends DistributedObjectServiceAdapter<GCounterService, Long>
 {
     // TODO: Add DistributedLongService for long primitive type?

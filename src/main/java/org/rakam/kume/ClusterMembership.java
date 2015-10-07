@@ -13,9 +13,7 @@
  */
 package org.rakam.kume;
 
-/**
- * Created by buremba <Burak Emre Kabakcı> on 19/09/15 05:49.
- */
+
 public interface ClusterMembership {
     void addMember(Member member);
     void removeMember(Member member);

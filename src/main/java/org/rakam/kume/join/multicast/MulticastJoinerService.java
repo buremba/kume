@@ -37,9 +37,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
-/**
- * Created by buremba <Burak Emre Kabakcı> on 19/09/15 02:52.
- */
+
 public class MulticastJoinerService implements JoinerService
 {
     final static Logger LOGGER = LoggerFactory.getLogger(Cluster.class);

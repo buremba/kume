@@ -13,9 +13,7 @@
  */
 package org.rakam.kume;
 
-/**
- * Created by buremba <Burak Emre Kabakcı> on 19/09/15 01:51.
- */
+
 public enum MemberState {
     FOLLOWER, CANDIDATE, MASTER
 }

@@ -15,9 +15,7 @@ import java.util.concurrent.CompletionException;
 
 import static com.google.common.base.Preconditions.checkState;
 
-/**
- * Created by buremba <Burak Emre Kabakcı> on 28/12/14 20:07.
- */
+
 public class ClusterCheckAndMergeOperation implements Operation<InternalService>
 {
     final static Logger LOGGER = LoggerFactory.getLogger(ClusterCheckAndMergeOperation.class);

@@ -13,9 +13,7 @@ import java.io.IOException;
 
 import static org.junit.Assert.assertEquals;
 
-/**
- * Created by buremba <Burak Emre Kabakcı> on 06/01/15 05:50.
- */
+
 //@RunWith(Theories.class)
 public class SerializationTest {
 

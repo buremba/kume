@@ -5,9 +5,7 @@ import org.rakam.kume.ServiceContext;
 
 import java.util.ArrayDeque;
 
-/**
- * Created by buremba <Burak Emre Kabakcı> on 24/11/14 02:12.
- */
+
 public abstract class PausableService<T extends Service> extends Service {
     private final ServiceContext<T> ctx;
     ArrayDeque<FutureRequest> objectQueue = new ArrayDeque();

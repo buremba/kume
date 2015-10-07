@@ -7,9 +7,7 @@ import java.net.SocketException;
 import java.net.UnknownHostException;
 import java.util.Enumeration;
 
-/**
- * Created by buremba <Burak Emre Kabakcı> on 23/11/14 17:25.
- */
+
 public class NetworkUtil {
     public static String getDefaultAddress() {
         try {

@@ -17,9 +17,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
-/**
- * Created by buremba <Burak Emre Kabakcı> on 25/11/14 19:29.
- */
+
 public class ConsoleRingMapTest {
 //    @Test
     public void testMap() throws InterruptedException {

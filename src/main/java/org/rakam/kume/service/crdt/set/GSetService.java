@@ -6,9 +6,7 @@ import org.rakam.kume.service.DistributedObjectServiceAdapter;
 import java.util.Set;
 import java.util.function.Supplier;
 
-/**
- * Created by buremba <Burak Emre Kabakcı> on 28/12/14 21:26.
- */
+
 public class GSetService<T> extends DistributedObjectServiceAdapter<GSetService<T>, Set<T>>
 {
     public GSetService(ServiceContext clusterContext, Supplier<Set<T>> value, int replicationFactor) {

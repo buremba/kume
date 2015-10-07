@@ -4,9 +4,7 @@ import org.rakam.kume.ServiceContext;
 
 import java.util.function.Consumer;
 
-/**
- * Created by buremba <Burak Emre Kabakcı> on 30/12/14 18:39.
- */
+
 public abstract class DistributedObjectServiceAdapter<C extends DistributedObjectServiceAdapter<C, T>, T> extends DistributedObjectService<C, T> {
     protected T value;
 

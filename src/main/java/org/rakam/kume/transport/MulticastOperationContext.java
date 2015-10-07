@@ -2,9 +2,7 @@ package org.rakam.kume.transport;
 
 import org.rakam.kume.Member;
 
-/**
- * Created by buremba <Burak Emre Kabakcı> on 25/12/14 19:38.
- */
+
 public class MulticastOperationContext implements OperationContext {
     private final int serviceId;
     Member sender;

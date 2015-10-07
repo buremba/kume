@@ -6,9 +6,7 @@ import org.rakam.kume.ServiceContext;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Stream;
 
-/**
- * Created by buremba <Burak Emre Kabakcı> on 30/12/14 19:33.
- */
+
 public class LWWRegister<T> extends DistributedObjectServiceAdapter<LWWRegister<T>, LWWRegister.ObjectTimestampHolder<T>>
 {
 

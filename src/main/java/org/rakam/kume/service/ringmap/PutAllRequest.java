@@ -6,9 +6,7 @@ import org.rakam.kume.transport.Request;
 import java.util.List;
 import java.util.Map;
 
-/**
- * Created by buremba <Burak Emre Kabakcı> on 18/12/14 14:58.
- */
+
 public class PutAllRequest implements Request<RingMap, Void> {
 
     private final List<Map.Entry> entries;

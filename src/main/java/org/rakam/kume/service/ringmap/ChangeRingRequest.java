@@ -1,21 +1,17 @@
 package org.rakam.kume.service.ringmap;
 
+import org.rakam.kume.Member;
 import org.rakam.kume.transport.OperationContext;
+import org.rakam.kume.transport.Request;
 import org.rakam.kume.transport.serialization.Serializer;
 import org.rakam.kume.util.ConsistentHashRing;
-import org.rakam.kume.Member;
-import org.rakam.kume.transport.Request;
 
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
 
 import static java.util.Map.Entry;
-import static org.rakam.kume.util.ConsistentHashRing.hash;
 
-/**
-* Created by buremba <Burak Emre Kabakcı> on 17/12/14 00:58.
-*/
 class ChangeRingRequest<K, V> implements Request<RingMap, Map<K, V>>
 {
     private final long queryStartToken;

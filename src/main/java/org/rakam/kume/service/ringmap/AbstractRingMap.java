@@ -32,9 +32,7 @@ import java.util.stream.Collectors;
 
 import static org.rakam.kume.util.ConsistentHashRing.hash;
 
-/**
- * Created by buremba <Burak Emre Kabakcı> on 02/01/15 18:45.
- */
+
 public abstract class AbstractRingMap<C extends AbstractRingMap, M extends Map, K, V> extends PausableService<C>
         implements MembershipListener {
     final static Logger LOGGER = LoggerFactory.getLogger(AbstractRingMap.class);

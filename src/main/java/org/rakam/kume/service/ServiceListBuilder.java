@@ -5,9 +5,7 @@ import com.google.common.collect.ImmutableList;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * Created by buremba <Burak Emre Kabakcı> on 25/11/14 15:52.
- */
+
 public class ServiceListBuilder {
     List<Constructor> constructorList;
 
