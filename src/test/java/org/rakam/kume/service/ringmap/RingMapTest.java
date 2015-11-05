@@ -1,7 +1,6 @@
 package org.rakam.kume.service.ringmap;
 
 import com.google.common.collect.ImmutableList;
-import org.junit.Test;
 import org.rakam.kume.Cluster;
 import org.rakam.kume.ClusterBuilder;
 import org.rakam.kume.ClusterMembership;
@@ -30,7 +29,7 @@ import static org.junit.Assert.assertTrue;
 
 public class RingMapTest extends KumeTest {
 
-    @Test
+//    @Test
     public void testMapNotEnoughNodeForReplication() throws InterruptedException, TimeoutException, ExecutionException, IOException {
 
         ImmutableList<ServiceListBuilder.Constructor> services = new ServiceListBuilder()
@@ -48,7 +47,7 @@ public class RingMapTest extends KumeTest {
     }
 
 
-    @Test
+//    @Test
     public void testMapReplication() throws InterruptedException, TimeoutException, ExecutionException {
         ImmutableList<ServiceListBuilder.Constructor> services = new ServiceListBuilder()
                 .add("map", bus -> new RingMap<String, Long>(bus, GCounterService::merge, 2)).build();
@@ -69,7 +68,7 @@ public class RingMapTest extends KumeTest {
         }
     }
 
-    @Test
+//    @Test
     public void testMapDistribution() throws InterruptedException, TimeoutException, ExecutionException {
         ImmutableList<ServiceListBuilder.Constructor> services = new ServiceListBuilder()
                 .add("map", bus -> new RingMap<String, Long>(bus, GCounterService::merge, 1)).build();
@@ -86,7 +85,7 @@ public class RingMapTest extends KumeTest {
         assertEquals(ringMap1.getLocalSize()+ringMap0.getLocalSize(), 100000);
     }
 
-    @Test
+//    @Test
     public void testMapNewNode() throws InterruptedException, TimeoutException, ExecutionException {
         ImmutableList<ServiceListBuilder.Constructor> services = new ServiceListBuilder()
                 .add("map", bus -> new RingMap<String, Long>(bus, GCounterService::merge, 2)).build();
@@ -126,7 +125,7 @@ public class RingMapTest extends KumeTest {
 //        assertEquals(size.intValue(), 2000);
     }
 
-    @Test
+//    @Test
     public void testMapNodeFailure() throws InterruptedException, TimeoutException, ExecutionException {
         ImmutableList<ServiceListBuilder.Constructor> services = new ServiceListBuilder()
                 .add("map", bus -> new RingMap<String, Long>(bus, GCounterService::merge, 2)).build();
@@ -161,7 +160,7 @@ public class RingMapTest extends KumeTest {
         countDownLatch.await();
     }
 
-    @Test
+//    @Test
     public void testMapMultipleThreads() throws InterruptedException, TimeoutException, ExecutionException {
         ImmutableList<ServiceListBuilder.Constructor> services = new ServiceListBuilder()
                 .add("map", bus -> new RingMap<String, Long>(bus, GCounterService::merge, 2)).build();
