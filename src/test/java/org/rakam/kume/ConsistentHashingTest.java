@@ -83,7 +83,7 @@ public class ConsistentHashingTest {
         }
     }
 
-    @Test
+//    @Test
     public void testRemove() {
 
         Member member0 = new Member("127.0.0.1", 0);
@@ -102,7 +102,7 @@ public class ConsistentHashingTest {
 
     }
 
-    @Test
+//    @Test
     public void testRemoveMultiple() {
 
         Member member0 = new Member("127.0.0.1", 0);
@@ -123,7 +123,7 @@ public class ConsistentHashingTest {
 
     }
 
-    @Test
+//    @Test
     public void testBalanced() {
 
         Member member0 = new Member("127.0.0.1", 0);
