@@ -118,7 +118,9 @@ public class Cluster {
                 .collect(Collectors.toConcurrentMap(x -> x._1, x -> x._2));
 
         scheduleClusteringTask();
-        transport.initialize();
+        if(!client) {
+            transport.initialize();
+        }
         this.joinerService = joinerService;
         if (joinerService != null) {
             joinerService.onStart(new ClusterMembership() {

@@ -57,15 +57,15 @@ public class NettyTransport implements Transport {
     // Processor thread pool that de-serializing/serializing incoming/outgoing packets
     final EventLoopGroup workerGroup = new NioEventLoopGroup(4);
 
-    private final TCPServerHandler server;
+    private TCPServerHandler server;
+    private final ThrowableNioEventLoopGroup requestExecutor;
+    private final List<Service> services;
+    private final Member localMember;
 
     public NettyTransport(ThrowableNioEventLoopGroup requestExecutor, List<Service> services, Member localMember) {
-        try {
-            this.server = new TCPServerHandler(bossGroup, workerGroup, requestExecutor, services, localMember.getAddress());
-        } catch (InterruptedException e) {
-            throw new IllegalStateException("Failed to bind TCP " + localMember.getAddress());
-        }
-
+        this.requestExecutor = requestExecutor;
+        this.services = services;
+        this.localMember = localMember;
     }
 
     private void removalListener(RemovalNotification<Integer, CompletableFuture<Object>> notification) {
@@ -116,6 +116,12 @@ public class NettyTransport implements Transport {
 
     @Override
     public void initialize() {
+        try {
+            this.server = new TCPServerHandler(bossGroup, workerGroup, requestExecutor, services, localMember.getAddress());
+        } catch (InterruptedException e) {
+            throw new IllegalStateException("Failed to bind TCP " + localMember.getAddress());
+        }
+
         server.setAutoRead(true);
     }
 
