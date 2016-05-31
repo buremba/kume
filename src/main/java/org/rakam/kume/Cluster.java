@@ -217,7 +217,7 @@ public class Cluster {
         heartbeatTask = eventLoop.scheduleAtFixedRate(() -> {
             long time = System.currentTimeMillis();
 
-            if (isMaster()) {
+            if (!localMember.isClient() && isMaster()) {
 //                heartbeatMap.forEach((member, lastResponse) -> {
 //                    if (time - lastResponse > 20000) {
 //                        removeMemberAsMaster(member, true);

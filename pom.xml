@@ -18,7 +18,7 @@
     <dependencies>
         <dependency>
             <groupId>com.esotericsoftware</groupId>
-            <artifactId>kryo</artifactId>
+            <artifactId>kryo-shaded</artifactId>
             <version>3.0.0</version>
         </dependency>
         <dependency>
